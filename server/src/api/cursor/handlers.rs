@@ -10,7 +10,7 @@ use tower_http::decompression::RequestDecompressionLayer;
 
 use crate::{
     api::cursor::{
-        bidi,
+        bidi, diagnostics,
         proxy::{self, CursorProxy},
         run_sse,
     },
@@ -163,6 +163,7 @@ fn router_with_proxy(
         .layer(Extension(proxy))
         .layer(Extension(knowledge_service))
         .layer(Extension(free_entitlements))
+        .layer(axum::middleware::from_fn(diagnostics::log_request))
         .with_state(registry)
         .merge(web_cache)
 }
@@ -195,6 +196,8 @@ async fn run_sse_handler(
 ) -> Result<Response<Body>> {
     let (parts, body) = buffered(request).await?;
     let request: agent::BidiRequestId = connect::decode_unary(&body)?;
+    tracing::Span::current().record("request_id", request.request_id.as_str());
+    tracing::info!("Cursor diagnostic: waiting for RunSSE route");
     let route = registry.wait_route(&request.request_id).await;
     let trace = registry.trace(&request.request_id);
     trace.resume();
@@ -205,9 +208,14 @@ async fn run_sse_handler(
     );
     match route {
         crate::cursor::transport::TransportRoute::Local => {
+            tracing::info!(route = "local", "Cursor diagnostic: RunSSE route selected");
             run_sse::stream(&registry, &request.request_id).await
         }
         crate::cursor::transport::TransportRoute::Upstream(generation) => {
+            tracing::info!(
+                route = "upstream",
+                "Cursor diagnostic: RunSSE route selected"
+            );
             let response = proxy::forward(
                 Extension(proxy),
                 Request::from_parts(parts, Body::from(body)),
@@ -233,6 +241,8 @@ async fn bidi_handler(
     let (parts, body) = buffered(request).await?;
     let request: ai::BidiAppendRequest = connect::decode_unary(&body)?;
     let decoded = bidi::decode(&request)?;
+    tracing::Span::current().record("request_id", decoded.request_id.as_str());
+    diagnostics::log_append(&decoded);
     let first_model = decoded.model_id().map(str::to_owned);
     let conversation_id = decoded.conversation_id().map(str::to_owned);
     let trace_metadata = decoded.trace_metadata();

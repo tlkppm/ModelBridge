@@ -111,6 +111,8 @@ export function installDemoApi() {
     const body = await readBody(input, init);
 
     if (path === "/promotions") return json({ slots: [] });
+    if (path === "/plugins") return json([]);
+    if (path === "/settings/pricing") return json({ input_per_million: 5, output_per_million: 25, cache_read_per_million: 0.5, cache_write_per_million: 6.25 });
     if (path === "/models" && method === "GET") return json(models);
     if (path === "/models" && method === "POST") return json(models);
     if (path === "/models/order") return json(models);

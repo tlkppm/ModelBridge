@@ -94,12 +94,21 @@ impl ToolCompletion {
         // boundary. Canonical history and every provider projection then
         // carry the same bounded result without reprocessing it.
         gate::tool_completion(&call.name, &mut tool, &mut result.content);
+        let completed_at_ms = now_ms();
+        tracing::info!(
+            call_id = %call.call_id,
+            tool = %call.name,
+            is_error = result.is_error,
+            elapsed_ms = completed_at_ms.saturating_sub(started_at_ms),
+            result_bytes = result.content.len(),
+            "Cursor diagnostic: tool completed"
+        );
         Self {
             result,
             tool_call: pb::ToolCall {
                 tool_call_id: Some(call.call_id.clone()),
                 started_at_ms: Some(started_at_ms),
-                completed_at_ms: Some(now_ms()),
+                completed_at_ms: Some(completed_at_ms),
                 tool: Some(tool),
                 hook_additional_contexts: Vec::new(),
             },

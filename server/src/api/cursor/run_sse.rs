@@ -4,7 +4,7 @@ use axum::{
     http::{header, HeaderValue, Response, StatusCode},
 };
 use bytes::Bytes;
-use std::convert::Infallible;
+use std::{convert::Infallible, time::Instant};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 
@@ -53,7 +53,13 @@ fn local_body_stream(
             trace.chunk(&chunk);
             if terminal {
                 guard.complete();
-                trace.finish(end_stream_error(&chunk));
+                let error = end_stream_error(&chunk);
+                tracing::info!(
+                    request_id = guard.handle.request_id(),
+                    failed = error.is_some(),
+                    "Cursor diagnostic: local response terminal frame ready"
+                );
+                trace.finish(error);
             }
             yield Ok::<Bytes, Infallible>(chunk);
             if terminal {
@@ -98,17 +104,28 @@ fn end_stream_error(frame: &Bytes) -> Option<String> {
 struct LocalRunGuard {
     handle: TransportHandle,
     completed: bool,
+    started: Instant,
 }
 
 impl LocalRunGuard {
     fn new(handle: TransportHandle) -> Self {
+        tracing::info!(
+            request_id = handle.request_id(),
+            "Cursor diagnostic: local response stream started"
+        );
         Self {
             handle,
             completed: false,
+            started: Instant::now(),
         }
     }
 
     fn complete(&mut self) {
+        tracing::info!(
+            request_id = self.handle.request_id(),
+            elapsed_ms = self.started.elapsed().as_millis(),
+            "Cursor diagnostic: local response stream completed"
+        );
         self.completed = true;
     }
 }
@@ -116,6 +133,11 @@ impl LocalRunGuard {
 impl Drop for LocalRunGuard {
     fn drop(&mut self) {
         if !self.completed {
+            tracing::warn!(
+                request_id = self.handle.request_id(),
+                elapsed_ms = self.started.elapsed().as_millis(),
+                "Cursor diagnostic: local response stream dropped before completion"
+            );
             let handle = self.handle.clone();
             tokio::spawn(async move {
                 handle.disconnect().await;

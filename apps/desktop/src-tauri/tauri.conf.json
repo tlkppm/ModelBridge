@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Cursor BYOK",
-  "version": "1.0.1",
+  "productName": "ModelBridge",
+  "mainBinaryName": "ModelBridge",
+  "version": "1.0.2",
   "identifier": "dev.cursorbyok.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -33,9 +34,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1MEY2RjQzRjA0MjhCMDUKUldRRmkwTHdRMjhQZGJJam9zT1NwcW83L1V4ckJvbkQzQ0FYVFZ6MGRpa1N2NVFkUHk1dW14c1AK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyNjQ3MzEzNzY4NjAxRgpSV1FmWUdnM01VY21CQ3NTS0NYUzhFS1l2ZGMwTlFrVkJvUTFDdW1PQVRrdlN5Mm8yT2o1Mit3dgo=",
       "endpoints": [
-        "https://github.com/leookun/cursor-byok/releases/latest/download/latest.json"
+        "https://github.com/tlkppm/cursor-byok/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

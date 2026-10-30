@@ -24,9 +24,9 @@ mod replacement;
 
 #[cfg(target_os = "windows")]
 const PORTABLE_UPDATE_ENDPOINT: &str =
-    "https://github.com/leookun/cursor-byok/releases/latest/download/portable-latest.json";
+    "https://github.com/tlkppm/cursor-byok/releases/latest/download/portable-latest.json";
 #[cfg(any(target_os = "windows", test))]
-const WINDOWS_PAYLOAD_NAME: &str = "cursor-byok-desktop.exe";
+const WINDOWS_PAYLOAD_NAME: &str = "ModelBridge.exe";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -120,6 +120,15 @@ pub(crate) async fn prepare(
         trace.artifact("history_projection", "byok_server", &encoded, summary);
     }
     let mut request_context = context::hydrate(request, context_sync).await?;
+    tracing::info!(
+        request_id,
+        direct_mcp_tools = request
+            .mcp_tools
+            .as_ref()
+            .map_or(0, |tools| tools.mcp_tools.len()),
+        contextual_mcp_tools = request_context.tools.len(),
+        "Cursor diagnostic: request context hydrated"
+    );
     if let Some(rules_dir) = local_rules_dir {
         context::merge_local_rules(&mut request_context, rules_dir);
     }
@@ -167,6 +176,15 @@ pub(crate) async fn prepare(
     } else {
         checkpoint_prompt.clone()
     };
+    tracing::info!(
+        request_id,
+        mode = mode_number,
+        dynamic_mcp_tools = dynamic.len(),
+        provider_tools = prompt.tools.len(),
+        subagents_disabled,
+        compacting,
+        "Cursor diagnostic: model tool catalog prepared"
+    );
     let proposed_base_checkpoint_id = match base_messages.as_mut() {
         Some(messages) if !messages.is_empty() => {
             validate_prompt_root(messages)?;

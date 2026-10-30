@@ -142,12 +142,12 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: v__VERSION__
-          releaseName: Cursor BYOK v__VERSION__
+          releaseName: ModelBridge v__VERSION__
           releaseBody: ${{ contains(needs.prepare.outputs.version, '-') && 'Beta release. Download the installer for your platform from the assets below.' || 'Download the installer for your platform from the assets below.' }}
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} -- --locked
 
       - name: Package legacy Linux updater asset
         if: matrix.platform == 'linux-x86_64'
@@ -156,7 +156,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           mkdir -p legacy-update
-          tar -czf "legacy-update/cursor-byok-${VERSION}-linux-amd64.tar.gz" -C target/release cursor-byok-desktop
+          tar -czf "legacy-update/cursor-byok-${VERSION}-linux-amd64.tar.gz" -C target/release ModelBridge
 
       - name: Package and sign legacy Windows updater asset
         if: matrix.platform == 'windows-x86_64'
@@ -168,13 +168,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force legacy-update | Out-Null
           $asset = "legacy-update/cursor-byok-$env:VERSION-windows-amd64.zip"
-          Compress-Archive -LiteralPath target/release/cursor-byok-desktop.exe -DestinationPath $asset
+          Compress-Archive -LiteralPath target/release/ModelBridge.exe -DestinationPath $asset
           Push-Location apps/desktop
           npm exec tauri signer sign -- "../../$asset"
           Pop-Location
           $entries = @(tar -tf $asset)
-          if ($entries.Count -ne 1 -or [System.IO.Path]::GetFileName($entries[0]) -ne 'cursor-byok-desktop.exe') {
-            throw "Windows updater archive must contain only cursor-byok-desktop.exe"
+          if ($entries.Count -ne 1 -or [System.IO.Path]::GetFileName($entries[0]) -ne 'ModelBridge.exe') {
+            throw "Windows updater archive must contain only ModelBridge.exe"
           }
           if (!(Test-Path "$asset.sig")) {
             throw "Windows updater archive signature was not generated"
@@ -224,7 +224,7 @@ jobs:
             --repository "${GITHUB_REPOSITORY}" \
             --assets-dir legacy-update \
             --output legacy-update/update.json \
-            --notes "Cursor BYOK v${VERSION}"
+            --notes "ModelBridge v${VERSION}"
 
       - name: Generate signed Windows portable update manifest
         env:

@@ -118,7 +118,43 @@ impl TransportHandle {
     }
 
     pub fn emit(&self, message: &pb::AgentServerMessage) -> Result<()> {
-        if self.emit_frame(connect::encode_message(message)?) {
+        let queued = self.emit_frame(connect::encode_message(message)?);
+        match message.message.as_ref() {
+            Some(pb::agent_server_message::Message::ExecServerMessage(exec)) => {
+                use pb::exec_server_message::Message;
+
+                let kind = match exec.message.as_ref() {
+                    Some(Message::RequestContextArgs(_)) => "request_context",
+                    Some(Message::ReadArgs(_)) => "read",
+                    Some(Message::WriteArgs(_)) => "write",
+                    Some(Message::ShellArgs(_)) | Some(Message::ShellStreamArgs(_)) => "shell",
+                    Some(Message::GrepArgs(_)) => "grep",
+                    Some(Message::McpArgs(_)) => "mcp",
+                    Some(Message::McpStateExecArgs(_)) => "mcp_state",
+                    Some(Message::SubagentArgs(_)) => "subagent",
+                    Some(_) => "other",
+                    None => "empty",
+                };
+                tracing::info!(
+                    request_id = self.request_id(),
+                    id = exec.id,
+                    call_id = %exec.exec_id,
+                    execution_kind = kind,
+                    queued,
+                    "Cursor diagnostic: execution request queued for client"
+                );
+            }
+            Some(pb::agent_server_message::Message::InteractionQuery(query)) => {
+                tracing::info!(
+                    request_id = self.request_id(),
+                    id = query.id,
+                    queued,
+                    "Cursor diagnostic: interaction request queued for client"
+                );
+            }
+            _ => {}
+        }
+        if queued {
             Ok(())
         } else {
             Err(Error::RunNotFound(self.request_id.clone()))

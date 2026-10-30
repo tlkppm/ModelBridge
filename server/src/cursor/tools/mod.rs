@@ -190,6 +190,12 @@ impl ToolDispatcher {
         dynamic_mcp: &BTreeMap<String, pb::McpToolDefinition>,
         context: &ExecContext,
     ) -> Result<DispatchedTool> {
+        tracing::info!(
+            call_id = %call.call_id,
+            tool = %call.name,
+            dynamic_mcp = dynamic_mcp.contains_key(&call.name),
+            "Cursor diagnostic: tool dispatch started"
+        );
         let call = context.prepare_call(call)?;
         let mut messages = if publish_started {
             vec![codec::tool_started(&call, dynamic_mcp.get(&call.name))?]
@@ -207,6 +213,13 @@ impl ToolDispatcher {
         )
         .await?;
         messages.extend(started.messages);
+        tracing::info!(
+            call_id = %call.call_id,
+            tool = %call.name,
+            outgoing_messages = messages.len(),
+            completed_immediately = started.completion.is_some(),
+            "Cursor diagnostic: tool dispatch prepared"
+        );
         Ok(DispatchedTool {
             messages,
             completion: started.completion,
@@ -270,6 +283,12 @@ impl ToolDispatcher {
 }
 
 fn validation_failure(call: &ToolCall, message: String) -> DispatchedTool {
+    tracing::warn!(
+        call_id = %call.call_id,
+        tool = %call.name,
+        error_bytes = message.len(),
+        "Cursor diagnostic: tool validation failed before dispatch"
+    );
     DispatchedTool {
         messages: Vec::new(),
         completion: Some(compat::failure_with_message(call, message)),

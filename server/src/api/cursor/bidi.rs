@@ -209,3 +209,52 @@ pub async fn append(
         .await?;
     Ok(ai::BidiAppendResponse {})
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Clone, PartialEq, Message)]
+    struct RunInferenceRunRequest {
+        #[prost(string, tag = "1")]
+        conversation_id: String,
+    }
+
+    #[derive(Clone, PartialEq, Message)]
+    struct RunInferenceClientMessage {
+        #[prost(message, optional, tag = "1")]
+        run_request: Option<RunInferenceRunRequest>,
+    }
+
+    #[test]
+    fn local_inference_protocol_reproduces_reported_agent_decode_errors() {
+        for (conversation_id, expected) in [
+            (
+                "00000000-0000-0000-0000-000000000000",
+                "ConversationStateStructure.summary",
+            ),
+            (
+                "f0000000-0000-0000-0000-000000000000",
+                "invalid wire type value: 6",
+            ),
+        ] {
+            let payload = RunInferenceClientMessage {
+                run_request: Some(RunInferenceRunRequest {
+                    conversation_id: conversation_id.into(),
+                }),
+            }
+            .encode_to_vec();
+            let request = ai::BidiAppendRequest {
+                request_id: Some(ai::BidiRequestId {
+                    request_id: "synthetic-request".into(),
+                }),
+                data: hex::encode(payload),
+                ..Default::default()
+            };
+            let Err(Error::Decode(error)) = decode(&request) else {
+                panic!("a local inference message must not decode as an Agent message");
+            };
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
+}

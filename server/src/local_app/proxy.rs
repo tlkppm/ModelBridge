@@ -114,6 +114,19 @@ impl HttpHandler for CursorRelay {
     ) -> RequestOrResponse {
         let original = request.uri().clone();
         let locally_routed = should_route_locally(original.path(), *self.tab_mode.read());
+        if is_cursor_host(original.host().unwrap_or_default())
+            && (original.path().starts_with("/agent.v1.")
+                || original.path().starts_with("/aiserver.v1.BidiService/"))
+        {
+            tracing::info!(
+                method = %request.method(),
+                path = original.path(),
+                http_version = ?request.version(),
+                has_authorization = request.headers().contains_key("authorization"),
+                locally_routed,
+                "Cursor diagnostic: proxy observed Agent request"
+            );
+        }
         if is_cursor_host(original.host().unwrap_or_default()) && locally_routed {
             if let Ok(value) = original.to_string().parse() {
                 request.headers_mut().insert(UPSTREAM_URL_HEADER, value);
