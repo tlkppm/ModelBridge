@@ -6,9 +6,9 @@ ModelBridge is a desktop model gateway for Cursor. It runs a local service that 
 
 This repository is an independently maintained fork of [leookun/cursor-byok](https://github.com/leookun/cursor-byok). The original implementation and its contributors remain credited to the upstream project. ModelBridge is the name of this fork's desktop application, not a claim of original authorship of the upstream code.
 
-- Repository: [tlkppm/cursor-byok](https://github.com/tlkppm/cursor-byok)
-- Release assets: [Releases](https://github.com/tlkppm/cursor-byok/releases)
-- Build execution records: [GitHub Actions](https://github.com/tlkppm/cursor-byok/actions)
+- Repository: [tlkppm/ModelBridge](https://github.com/tlkppm/ModelBridge)
+- Release assets: [Releases](https://github.com/tlkppm/ModelBridge/releases)
+- Build execution records: [GitHub Actions](https://github.com/tlkppm/ModelBridge/actions)
 - Source license: [MIT](./LICENSE)
 
 ## Scope of this fork
@@ -41,9 +41,9 @@ The release workflow is configured for these targets:
 - macOS Apple Silicon, using aarch64.
 - macOS Intel, using x86_64.
 
-Check this repository's [release assets](https://github.com/tlkppm/cursor-byok/releases) for the packages that have actually been built and published. A source archive, version tag, or workflow file alone is not a completed application package.
+Check this repository's [release assets](https://github.com/tlkppm/ModelBridge/releases) for the packages that have actually been built and published. A source archive, version tag, or workflow file alone is not a completed application package.
 
-The release pipeline builds platform packages into a draft release and publishes the release only after all configured platform jobs succeed. Build progress and failures belong to the [Actions execution records](https://github.com/tlkppm/cursor-byok/actions), not the existence of a tag.
+The release pipeline builds platform packages into a draft release and publishes the release only after all configured platform jobs succeed. Build progress and failures belong to the [Actions execution records](https://github.com/tlkppm/ModelBridge/actions), not the existence of a tag.
 
 Automatic-update signatures verify update packages against this fork's configured public key. They are separate from Windows executable signing and Apple Developer signing or notarization; an update signature does not establish operating-system signing or notarization.
 
@@ -67,7 +67,7 @@ A successful frontend build is not a native application build. A successful plat
 
 ## Contributions and feedback
 
-Changes for ModelBridge should target this fork's [pull requests](https://github.com/tlkppm/cursor-byok/pulls). Include the application version, operating system, provider protocol, reproduction steps, and sanitized errors when describing a problem.
+Changes for ModelBridge should target this fork's [pull requests](https://github.com/tlkppm/ModelBridge/pulls). Include the application version, operating system, provider protocol, reproduction steps, and sanitized errors when describing a problem.
 
 The upstream project's roadmap, community groups, promotional links, and release statistics are not presented as this fork's own resources.
 

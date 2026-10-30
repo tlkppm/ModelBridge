@@ -6,9 +6,9 @@ ModelBridge 是面向 Cursor 的桌面模型网关。它在本机运行服务，
 
 本仓库是基于 [leookun/cursor-byok](https://github.com/leookun/cursor-byok) 独立维护的分支。原始实现及其贡献者的归属保留在上游项目。ModelBridge 是本分支桌面应用的名称，不代表上游代码由本分支原创。
 
-- 项目仓库：[tlkppm/cursor-byok](https://github.com/tlkppm/cursor-byok)
-- 发行产物：[Releases](https://github.com/tlkppm/cursor-byok/releases)
-- 构建执行记录：[GitHub Actions](https://github.com/tlkppm/cursor-byok/actions)
+- 项目仓库：[tlkppm/ModelBridge](https://github.com/tlkppm/ModelBridge)
+- 发行产物：[Releases](https://github.com/tlkppm/ModelBridge/releases)
+- 构建执行记录：[GitHub Actions](https://github.com/tlkppm/ModelBridge/actions)
 - 源码许可证：[MIT](./LICENSE)
 
 ## 本分支的范围
@@ -41,9 +41,9 @@ ModelBridge 是面向 Cursor 的桌面模型网关。它在本机运行服务，
 - macOS Apple Silicon，使用 aarch64 架构。
 - macOS Intel，使用 x86_64 架构。
 
-请以本仓库 [Releases 中实际存在的附件](https://github.com/tlkppm/cursor-byok/releases) 为准，确认哪些安装包或程序已经构建并发布。源码压缩包、版本标签或工作流文件本身都不等于已经生成可执行程序。
+请以本仓库 [Releases 中实际存在的附件](https://github.com/tlkppm/ModelBridge/releases) 为准，确认哪些安装包或程序已经构建并发布。源码压缩包、版本标签或工作流文件本身都不等于已经生成可执行程序。
 
-发行流水线先将各平台产物上传到草稿发行版，全部平台任务成功后才正式发布。构建进度和失败原因应查看 [Actions 执行记录](https://github.com/tlkppm/cursor-byok/actions)，不能仅凭标签存在判断构建已经运行。
+发行流水线先将各平台产物上传到草稿发行版，全部平台任务成功后才正式发布。构建进度和失败原因应查看 [Actions 执行记录](https://github.com/tlkppm/ModelBridge/actions)，不能仅凭标签存在判断构建已经运行。
 
 自动更新签名用于通过本分支配置的公钥验证更新包。它与 Windows 可执行文件签名、Apple Developer 签名及 Apple 公证相互独立；存在更新签名不代表已完成操作系统代码签名或公证。
 
@@ -67,7 +67,7 @@ Rust 工作区定义在 [`Cargo.toml`](./Cargo.toml)。格式检查、lint 和�
 
 ## 贡献与反馈
 
-ModelBridge 的变更应提交到本分支的 [Pull Requests](https://github.com/tlkppm/cursor-byok/pulls)。描述问题时，请提供应用版本、操作系统、服务商协议、复现步骤和已脱敏的错误信息。
+ModelBridge 的变更应提交到本分支的 [Pull Requests](https://github.com/tlkppm/ModelBridge/pulls)。描述问题时，请提供应用版本、操作系统、服务商协议、复现步骤和已脱敏的错误信息。
 
 上游项目的路线图、社区群组、推广链接和发行统计不作为本分支自身的资源展示。
 
