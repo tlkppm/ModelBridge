@@ -1,113 +1,78 @@
-## 👋Is Cursor getting too heavy?  ✨ **New from the same author** → [BaoCode](https://github.com/baocode-dev/baocode) — an awesome desktop GUI for Claude Code: polished, ultra-small, ultra-light.
+## ModelBridge
 
-<div align="center">
+[简体中文](./README-CN.md)
 
-# cursor-byok
-cursor-byok is a local implementation of Cursor's backend.
-<br>
-<br>
-<a href="https://trendshift.io/repositories/39260?utm_source=repository-badge&amp;utm_medium=badge&amp;utm_campaign=badge-repository-39260" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/39260" alt="leookun/cursor-byok | Trendshift" width="250" height="55" /></a>
+ModelBridge is a desktop model gateway for Cursor. It runs a local service that connects Cursor Agent to model APIs you configure, with protocol adaptation, tool-call coordination, conversation state, and request diagnostics.
 
-[User Guide](https://docs.leokun.cn) · [Download](https://github.com/leookun/cursor-byok/releases/latest) · [Report an Issue](https://github.com/leookun/cursor-byok/issues) · [中文版本说明](./README-CN.md)
+This repository is an independently maintained fork of [leookun/cursor-byok](https://github.com/leookun/cursor-byok). The original implementation and its contributors remain credited to the upstream project. ModelBridge is the name of this fork's desktop application, not a claim of original authorship of the upstream code.
 
-[![Release](https://img.shields.io/github/v/release/leookun/cursor-byok?style=flat-square)](https://github.com/leookun/cursor-byok/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/leookun/cursor-byok/total?style=flat-square)](https://github.com/leookun/cursor-byok/releases)
-[![License](https://img.shields.io/github/license/leookun/cursor-byok?style=flat-square)](./LICENSE)
-[![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=flat-square)](https://github.com/leookun/cursor-byok/releases/latest)
+- Repository: [tlkppm/cursor-byok](https://github.com/tlkppm/cursor-byok)
+- Release assets: [Releases](https://github.com/tlkppm/cursor-byok/releases)
+- Build execution records: [GitHub Actions](https://github.com/tlkppm/cursor-byok/actions)
+- Source license: [MIT](./LICENSE)
 
+## Scope of this fork
 
+- Uses the ModelBridge application name and maintains its own desktop versions.
+- Focuses desktop navigation on the dashboard, request details, Cursor model configuration, and system settings.
+- Removes the built-in tutorial and plugin configuration pages from the desktop interface. The underlying plugin runtime is separate from those pages.
+- Uses this repository's release feeds and a dedicated public key for automatic-update signature verification.
+- Retains the upstream protocol adaptation, provider integration, and local conversation-processing foundation.
 
-</div>
+This fork is maintained separately from the upstream project. Its releases, changes, and support should be evaluated against this repository rather than the upstream release page. ModelBridge is not affiliated with or endorsed by Cursor or its developers.
 
-![Connect cursor-byok to a wide range of model APIs](./images/en-brand-1.png)
+## Core capabilities
 
-![cursor-byok dashboard](./images/en-home-1.png)
+- Custom model endpoints, model identifiers, credentials, request headers, and generation parameters.
+- OpenAI Responses API, OpenAI Chat Completions API, and Anthropic Messages API compatible providers.
+- Model configuration management, connection testing, and inspection of provider responses.
+- Cursor Agent request handling, tool calls, reusable Skills, and Model Context Protocol (MCP) tool integration.
+- Request details, token usage, cache metrics, latency, and conversation statistics.
+- Desktop application lifecycle settings and signed automatic-update verification.
 
-## About
+Compatibility depends on the Cursor version, the selected provider, the model's capabilities, and the API protocol. Support for a protocol does not guarantee that every provider implements every feature consistently.
 
-cursor-byok is an open-source local model gateway for Cursor. It runs a service on your machine that connects Cursor to the model APIs you configure, routes model requests through your own providers, and preserves Cursor Agent capabilities such as tool calling, Skills, and MCP.
+## Desktop releases
 
-You can connect OpenAI- and Anthropic-compatible services, customize endpoints, model IDs, API keys, and request parameters, and use model channels beyond the options built into the platform.
+The release workflow is configured for these targets:
 
-> [!IMPORTANT]
-> cursor-byok is free and open source, but the model APIs you connect may charge for usage. This is an independent project and is not affiliated with or endorsed by Cursor or its developers.
+- Windows x86_64.
+- Linux x86_64.
+- macOS Apple Silicon, using aarch64.
+- macOS Intel, using x86_64.
 
-## Features
+Check this repository's [release assets](https://github.com/tlkppm/cursor-byok/releases) for the packages that have actually been built and published. A source archive, version tag, or workflow file alone is not a completed application package.
 
-- **Bring your own model channels:** Configure your own API endpoint, credentials, and model IDs.
-- **Multiple API protocols:** Use OpenAI- and Anthropic-compatible APIs or a custom endpoint.
-- **Model management:** Add, duplicate, edit, reorder, and batch-test multiple model configurations.
-- **Connection benchmarks:** Measure time to first token, generation speed, and inspect raw provider responses.
-- **Agent workflows:** Keep tool calling, Skills, MCP, and multi-turn conversations available.
-- **Session metrics:** Track token usage, cache hit rate, conversation turns, and estimated value.
-- **Cross-platform:** Run on macOS, Windows, and Linux.
+The release pipeline builds platform packages into a draft release and publishes the release only after all configured platform jobs succeed. Build progress and failures belong to the [Actions execution records](https://github.com/tlkppm/cursor-byok/actions), not the existence of a tag.
 
-## Quick Start
+Automatic-update signatures verify update packages against this fork's configured public key. They are separate from Windows executable signing and Apple Developer signing or notarization; an update signature does not establish operating-system signing or notarization.
 
-1. Download the latest build for your platform from [GitHub Releases](https://github.com/leookun/cursor-byok/releases/latest).
-2. Launch cursor-byok, open **Model Settings**, and enter the endpoint, API key, and model ID.
-3. Test the model configuration. Once it passes, return to the dashboard and start the service.
-4. Test the model configuration. Once it passes, return to the dashboard and start the service.
-5. After upgrading Cursor or configuring a model for the first time, quit Cursor completely and restart it, then start a new conversation and select the configured model.
+## Local data and external services
 
-For complete installation steps, system configuration, and Frequently Asked Questions, see the [User Guide](https://docs.leokun.cn).
+The gateway runs on your machine. Runtime API credentials, model configuration, application settings, and conversation records are stored locally.
 
-## Model Management
+Model requests still send the required conversation context and tool results to the configured provider. Other enabled integrations may also use external services. Running a local gateway does not make a remote model run offline.
 
-Model configurations support both OpenAI and Anthropic API protocols. Each model channel can independently define its context window, maximum output tokens, reasoning effort, custom headers, and additional request parameters.
+Provider billing and privacy policies remain the provider's responsibility. The open-source application does not include model API credits or guarantee access to Cursor's paid services. Keep credentials, private keys, local databases, and unredacted request logs out of public commits and feedback.
 
-![cursor-byok model settings](./images/en-model-1.png)
+## Development
 
-## How It Works
+The desktop frontend uses React and TypeScript with Tauri 2. The local service is implemented in Rust and uses SQLite for persistence.
 
-```text
-Cursor client
-    │
-    │ Agent requests and tool results
-    ▼
-cursor-byok local service
-    │
-    │ OpenAI- / Anthropic-compatible requests
-    ▼
-Your model API
-```
+The frontend and desktop commands are defined in [`apps/desktop/package.json`](./apps/desktop/package.json). From that directory, `npm run check` runs frontend type checks and the production frontend build, while `npm run tauri:build` builds the native desktop application with the current platform's build dependencies.
 
-cursor-byok handles protocol adaptation, model request forwarding, tool-call coordination, and conversation state on your machine. API keys and application settings are stored locally; requests are still sent to the model provider you configure.
+The Rust workspace is defined in [`Cargo.toml`](./Cargo.toml). Formatting, lint, and test jobs are described in the [CI workflow](./.github/workflows/ci.yml). Platform dependencies, release targets, signing inputs, and publication stages are defined in the [release workflow](./.github/workflows/release.yml).
 
-## Why This Project
+A successful frontend build is not a native application build. A successful platform build also does not replace runtime testing on that operating system.
 
-Many Agent products bundle their tool capabilities with a fixed set of models, subscriptions, and billing options, leaving users limited to the channels offered by the platform.
+## Contributions and feedback
 
-cursor-byok is built to return model choice to the user. Developers can make full use of the APIs and credits they already have, choose the models and providers that fit their needs, and self-host related services when required.
+Changes for ModelBridge should target this fork's [pull requests](https://github.com/tlkppm/cursor-byok/pulls). Include the application version, operating system, provider protocol, reproduction steps, and sanitized errors when describing a problem.
 
-## Roadmap
+The upstream project's roadmap, community groups, promotional links, and release statistics are not presented as this fork's own resources.
 
-The project will continue to improve model compatibility, Agent tooling, local runtime stability, and the self-hosting experience while exploring support for more IDE, chat, and Agent workflows.
+## Attribution and license
 
-See the [release roadmap](https://github.com/leookun/cursor-byok/discussions/32) for plans and progress.
+ModelBridge is derived from [cursor-byok](https://github.com/leookun/cursor-byok) by leookun and its contributors. The original copyright notice and MIT license are retained in [`LICENSE`](./LICENSE).
 
-## Community and Support
-
-- [User Guide](https://docs.leokun.cn)
-- [GitHub Issues](https://github.com/leookun/cursor-byok/issues)
-- [Telegram community](https://t.me/cursor_byok)
-- QQ groups: `1095916242`, `1094411438`, `1095918002`, `1094419321`
-
-
-
-## Development and Contributing
-
-Issues and pull requests are welcome. See the [Contributing Guide](./CONTRIBUTING_EN.md) for prerequisites, build commands, project structure, and contribution guidelines.
-
-## Contributors
-
-<a href="https://github.com/leookun/cursor-byok/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=leookun/cursor-byok" />
-</a>
-
-
-## License
-
-This project is open source under the [MIT License](./LICENSE).
-
-
+Additional provenance for the Semble-derived search implementation is recorded in [`UPSTREAM.md`](./UPSTREAM.md).
