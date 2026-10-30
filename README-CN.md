@@ -9,6 +9,7 @@ ModelBridge 是面向 Cursor 的桌面模型网关。它在本机运行服务，
 - 项目仓库：[tlkppm/ModelBridge](https://github.com/tlkppm/ModelBridge)
 - 发行产物：[Releases](https://github.com/tlkppm/ModelBridge/releases)
 - 构建执行记录：[GitHub Actions](https://github.com/tlkppm/ModelBridge/actions)
+- 中国大陆交流频道：QQ 群 **Plus/Pro 分享群**，群号 `554549065`。
 - 源码许可证：[MIT](./LICENSE)
 
 ## 本分支的范围
@@ -65,11 +66,17 @@ Rust 工作区定义在 [`Cargo.toml`](./Cargo.toml)。格式检查、lint 和�
 
 前端构建成功不等于原生应用编译成功，某个平台编译成功也不能替代在该操作系统上的实际运行测试。
 
-## 贡献与反馈
+## 交流频道与贡献
 
-ModelBridge 的变更应提交到本分支的 [Pull Requests](https://github.com/tlkppm/ModelBridge/pulls)。描述问题时，请提供应用版本、操作系统、服务商协议、复现步骤和已脱敏的错误信息。
+面向中国大陆用户的社区交流频道为 QQ 群 **Plus/Pro 分享群**。欢迎交流 ModelBridge 的模型接入、使用体验和版本反馈。
 
-上游项目的路线图、社区群组、推广链接和发行统计不作为本分支自身的资源展示。
+- 群号：`554549065`。
+- 加入方式：在 QQ 中搜索群号，能否加入以群设置和审核结果为准。
+- 技术反馈：请提供应用版本、操作系统、服务商协议、复现步骤和已脱敏的错误信息。
+
+该群是社区交流频道，不代表 Cursor、OpenAI 或上游项目的官方支持。请勿在群消息或日志中公开 API Key、密码、登录验证码、会话凭据及私密对话内容。
+
+代码变更和评审请提交到本分支的 [Pull Requests](https://github.com/tlkppm/ModelBridge/pulls)。
 
 ## 来源与许可证
 

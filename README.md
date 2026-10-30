@@ -9,6 +9,7 @@ This repository is an independently maintained fork of [leookun/cursor-byok](htt
 - Repository: [tlkppm/ModelBridge](https://github.com/tlkppm/ModelBridge)
 - Release assets: [Releases](https://github.com/tlkppm/ModelBridge/releases)
 - Build execution records: [GitHub Actions](https://github.com/tlkppm/ModelBridge/actions)
+- Mainland China community: QQ group **Plus/Pro 分享群**, group number `554549065`.
 - Source license: [MIT](./LICENSE)
 
 ## Scope of this fork
@@ -65,11 +66,17 @@ The Rust workspace is defined in [`Cargo.toml`](./Cargo.toml). Formatting, lint,
 
 A successful frontend build is not a native application build. A successful platform build also does not replace runtime testing on that operating system.
 
-## Contributions and feedback
+## Community and contributions
 
-Changes for ModelBridge should target this fork's [pull requests](https://github.com/tlkppm/ModelBridge/pulls). Include the application version, operating system, provider protocol, reproduction steps, and sanitized errors when describing a problem.
+The QQ group **Plus/Pro 分享群** is a community discussion channel for users in mainland China. It welcomes discussion of ModelBridge model integration, application usage, and release feedback.
 
-The upstream project's roadmap, community groups, promotional links, and release statistics are not presented as this fork's own resources.
+- QQ group number: `554549065`.
+- Joining: search for the group number in QQ; admission is subject to the group's settings and approval process.
+- Technical feedback: include the application version, operating system, provider protocol, reproduction steps, and sanitized errors.
+
+This is a community channel, separate from official Cursor, OpenAI, or upstream project support. Keep API keys, passwords, login verification codes, session credentials, and private conversation data out of shared messages and logs.
+
+Code changes and reviews should target this fork's [pull requests](https://github.com/tlkppm/ModelBridge/pulls).
 
 ## Attribution and license
 
