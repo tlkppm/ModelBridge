@@ -15,7 +15,7 @@ This repository is an independently maintained fork of [leookun/cursor-byok](htt
 ## Scope of this fork
 
 - Uses the ModelBridge application name and maintains its own desktop versions.
-- Focuses desktop navigation on the dashboard, request details, Cursor model configuration, and system settings.
+- Focuses desktop navigation on the dashboard, request details, Cursor model configuration, system settings, and a dedicated About page with the application version, repository link, and QQ community information.
 - Removes the built-in tutorial and plugin configuration pages from the desktop interface. The underlying plugin runtime is separate from those pages.
 - Uses this repository's release feeds and a dedicated public key for automatic-update signature verification.
 - Retains the upstream protocol adaptation, provider integration, and local conversation-processing foundation.

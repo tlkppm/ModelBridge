@@ -1,0 +1,36 @@
+@use "../../styles/typography" as type;
+
+.content {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  font-size: type.$font-size-base;
+
+  p {
+    margin: 0;
+    color: var(--vscode-descriptionForeground);
+    line-height: 1.6;
+  }
+}
+
+.address {
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+}
+
+.groupNumber {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+
+  span {
+    color: var(--vscode-descriptionForeground);
+  }
+
+  code {
+    font-size: inherit;
+    font-variant-numeric: tabular-nums;
+  }
+}

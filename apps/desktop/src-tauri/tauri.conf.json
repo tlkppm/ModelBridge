@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ModelBridge",
   "mainBinaryName": "ModelBridge",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "identifier": "dev.cursorbyok.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -36,7 +36,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyNjQ3MzEzNzY4NjAxRgpSV1FmWUdnM01VY21CQ3NTS0NYUzhFS1l2ZGMwTlFrVkJvUTFDdW1PQVRrdlN5Mm8yT2o1Mit3dgo=",
       "endpoints": [
-        "https://github.com/tlkppm/cursor-byok/releases/latest/download/latest.json"
+        "https://github.com/tlkppm/ModelBridge/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

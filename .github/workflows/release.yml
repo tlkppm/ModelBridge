@@ -19,6 +19,8 @@ jobs:
     outputs:
       should_publish: ${{ steps.release.outputs.should_publish }}
       version: ${{ steps.version.outputs.version }}
+      repository: ${{ steps.repository.outputs.repository }}
+      repository_name: ${{ steps.repository.outputs.name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,6 +35,19 @@ jobs:
             echo "Only ${REPOSITORY_OWNER} may publish a release" >&2
             exit 1
           fi
+
+      - name: Resolve canonical repository
+        id: repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY_ID: ${{ github.repository_id }}
+        shell: bash
+        run: |
+          repository=$(gh api "repositories/${REPOSITORY_ID}" --jq .full_name)
+          [[ "${repository}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          test "${repository%%/*}" = "${GITHUB_REPOSITORY_OWNER}"
+          echo "repository=${repository}" >> "${GITHUB_OUTPUT}"
+          echo "name=${repository#*/}" >> "${GITHUB_OUTPUT}"
 
       - name: Verify updater signing key
         env:
@@ -62,10 +77,14 @@ jobs:
           fi
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
+      - name: Test release manifest validation
+        run: node --test .github/scripts/*.test.mjs
+
       - name: Check whether this version is already published
         id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ steps.repository.outputs.repository }}
           VERSION: ${{ steps.version.outputs.version }}
         shell: bash
         run: |
@@ -103,6 +122,9 @@ jobs:
             target: x86_64-apple-darwin
 
     runs-on: ${{ matrix.os }}
+    env:
+      GH_REPO: ${{ needs.prepare.outputs.repository }}
+      RELEASE_REPOSITORY: ${{ needs.prepare.outputs.repository }}
 
     steps:
       - uses: actions/checkout@v4
@@ -134,6 +156,7 @@ jobs:
         run: npm ci
 
       - uses: tauri-apps/tauri-action@v1
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -141,6 +164,9 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ contains(matrix.platform, 'macos') && '-' || '' }}
         with:
           projectPath: apps/desktop
+          owner: ${{ github.repository_owner }}
+          repo: ${{ needs.prepare.outputs.repository_name }}
+          retryAttempts: 3
           tagName: v__VERSION__
           releaseName: ModelBridge v__VERSION__
           releaseBody: ${{ contains(needs.prepare.outputs.version, '-') && 'Beta release. Download the installer for your platform from the assets below.' || 'Download the installer for your platform from the assets below.' }}
@@ -148,6 +174,46 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           args: ${{ matrix.args }} -- --locked
+
+      - name: Preserve native packages and signatures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-packages-${{ matrix.platform }}
+          path: |
+            target/**/release/bundle/**/*.exe
+            target/**/release/bundle/**/*.AppImage
+            target/**/release/bundle/**/*.deb
+            target/**/release/bundle/**/*.rpm
+            target/**/release/bundle/**/*.dmg
+            target/**/release/bundle/**/*.app.tar.gz
+            target/**/release/bundle/**/*.sig
+            target/release/ModelBridge.exe
+          if-no-files-found: error
+
+      - name: Verify platform release upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.tauri.outputs.releaseId }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          test -n "${RELEASE_ID}"
+          mkdir -p tauri-upload-check
+          for attempt in 1 2 3; do
+            gh api "repos/${RELEASE_REPOSITORY}/releases/${RELEASE_ID}" > tauri-upload-check/release.json
+            asset_id=$(node -p 'require("./tauri-upload-check/release.json").assets.find(({ name }) => name === "latest.json")?.id ?? ""')
+            if [[ -n "${asset_id}" ]]; then
+              gh api -H "Accept: application/octet-stream" "repos/${RELEASE_REPOSITORY}/releases/assets/${asset_id}" > tauri-upload-check/latest.json
+              if node .github/scripts/normalize-tauri-update.mjs --manifest tauri-upload-check/latest.json --release tauri-upload-check/release.json --repository "${RELEASE_REPOSITORY}" --version "${VERSION}" --platform "${PLATFORM}"; then
+                exit 0
+              fi
+            fi
+            echo "Release upload is not yet verified for ${PLATFORM}; attempt ${attempt}."
+          done
+          echo "Release upload verification failed for ${PLATFORM}. Native packages are preserved as workflow artifacts." >&2
+          exit 1
 
       - name: Package legacy Linux updater asset
         if: matrix.platform == 'linux-x86_64'
@@ -206,6 +272,9 @@ jobs:
     needs: [prepare, publish]
     if: needs.prepare.outputs.should_publish == 'true' && needs.publish.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      GH_REPO: ${{ needs.prepare.outputs.repository }}
+      RELEASE_REPOSITORY: ${{ needs.prepare.outputs.repository }}
     steps:
       - uses: actions/checkout@v4
 
@@ -221,7 +290,7 @@ jobs:
         run: |
           node .github/scripts/generate-legacy-update.mjs \
             --version "${VERSION}" \
-            --repository "${GITHUB_REPOSITORY}" \
+            --repository "${RELEASE_REPOSITORY}" \
             --assets-dir legacy-update \
             --output legacy-update/update.json \
             --notes "ModelBridge v${VERSION}"
@@ -235,7 +304,7 @@ jobs:
           test -f "legacy-update/${asset}.sig"
           node .github/scripts/generate-portable-update.mjs \
             --version "${VERSION}" \
-            --repository "${GITHUB_REPOSITORY}" \
+            --repository "${RELEASE_REPOSITORY}" \
             --asset "${asset}" \
             --signature "legacy-update/${asset}.sig" \
             --output legacy-update/portable-latest.json
@@ -247,21 +316,21 @@ jobs:
         run: |
           mkdir -p tauri-update
           release_id=$(
-            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            gh api "repos/${RELEASE_REPOSITORY}/releases?per_page=100" \
               --jq ".[] | select(.tag_name == \"v${VERSION}\") | .id"
           )
           test -n "${release_id}"
-          gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}" > tauri-update/release.json
+          gh api "repos/${RELEASE_REPOSITORY}/releases/${release_id}" > tauri-update/release.json
           asset_id=$(node -p 'require("./tauri-update/release.json").assets.find(({ name }) => name === "latest.json")?.id ?? ""')
           test -n "${asset_id}"
           gh api \
             -H "Accept: application/octet-stream" \
-            "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}" \
+            "repos/${RELEASE_REPOSITORY}/releases/assets/${asset_id}" \
             > tauri-update/latest.json
           node .github/scripts/normalize-tauri-update.mjs \
             --manifest tauri-update/latest.json \
             --release tauri-update/release.json \
-            --repository "${GITHUB_REPOSITORY}" \
+            --repository "${RELEASE_REPOSITORY}" \
             --version "${VERSION}"
 
       - name: Upload normalized Tauri updater manifest

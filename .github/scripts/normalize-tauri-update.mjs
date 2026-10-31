@@ -21,7 +21,18 @@ function required(options, name) {
   return value;
 }
 
-export function normalizeTauriUpdate(manifest, release, repository, version) {
+const platformKeys = {
+  "windows-x86_64": "windows-x86_64",
+  "linux-x86_64": "linux-x86_64",
+  "macos-aarch64": "darwin-aarch64",
+  "macos-x86_64": "darwin-x86_64",
+};
+
+export function normalizeTauriUpdate(manifest, release, repository, version, platform) {
+  if (platform && !Object.hasOwn(platformKeys, platform)) {
+    throw new Error(`unknown release platform: ${platform}`);
+  }
+  const requiredPlatforms = platform ? [platformKeys[platform]] : Object.values(platformKeys);
   if (manifest.version !== version) {
     throw new Error(
       `updater manifest version ${manifest.version ?? "is missing"}; expected ${version}`,
@@ -36,10 +47,23 @@ export function normalizeTauriUpdate(manifest, release, repository, version) {
     throw new Error("updater manifest has no platforms");
   }
 
+  for (const platform of requiredPlatforms) {
+    if (!manifest.platforms[platform]) {
+      throw new Error(`updater manifest is missing platform ${platform}`);
+    }
+  }
+  if (!Array.isArray(release.assets) || release.assets.length === 0) {
+    throw new Error("GitHub release has no uploaded assets");
+  }
   const assetsBySourceUrl = new Map();
   const publicAssetUrls = new Set();
-  for (const asset of release.assets ?? []) {
-    if (!asset?.id || !asset?.name) continue;
+  for (const asset of release.assets) {
+    if (!Number.isSafeInteger(asset?.id) || asset.id <= 0 || !asset.name) {
+      throw new Error(`release asset ${asset?.name ?? "unknown"} has invalid metadata`);
+    }
+    if (!platform && (!Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.state !== "uploaded")) {
+      throw new Error(`release asset ${asset.name} was not uploaded successfully`);
+    }
     const publicUrl = `https://github.com/${repository}/releases/download/v${version}/${encodeURIComponent(asset.name)}`;
     assetsBySourceUrl.set(
       `https://api.github.com/repos/${repository}/releases/assets/${asset.id}`,
@@ -51,13 +75,27 @@ export function normalizeTauriUpdate(manifest, release, repository, version) {
     publicAssetUrls.add(publicUrl);
   }
 
-  for (const [platform, entry] of Object.entries(manifest.platforms)) {
+  const entries = platform
+    ? [[platformKeys[platform], manifest.platforms[platformKeys[platform]]]]
+    : Object.entries(manifest.platforms);
+  for (const [platform, entry] of entries) {
     if (!entry?.signature || !entry?.url) {
       throw new Error(`updater platform ${platform} is missing its URL or signature`);
     }
     const publicUrl = assetsBySourceUrl.get(entry.url) ?? entry.url;
     if (!publicAssetUrls.has(publicUrl)) {
       throw new Error(`updater platform ${platform} references an unknown release asset`);
+    }
+    const payload = release.assets.find((asset) =>
+      publicUrl.endsWith(`/${encodeURIComponent(asset.name)}`));
+    const signatureAsset = release.assets.find((asset) => asset.name === `${payload.name}.sig`);
+    if (!signatureAsset) {
+      throw new Error(`updater platform ${platform} is missing its uploaded signature file`);
+    }
+    for (const asset of [payload, signatureAsset]) {
+      if (!Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.state !== "uploaded") {
+        throw new Error(`release asset ${asset.name} was not uploaded successfully`);
+      }
     }
     entry.url = publicUrl;
   }
@@ -86,6 +124,7 @@ async function main() {
     release,
     repository,
     version,
+    options.get("platform"),
   );
   await writeFile(manifestPath, `${JSON.stringify(normalized, null, 2)}\n`);
 }

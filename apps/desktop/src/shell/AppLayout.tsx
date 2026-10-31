@@ -14,7 +14,7 @@ import { ConfirmDialog } from "../shared/ui/ConfirmDialog";
 import controls from "../shared/ui/Controls.module.scss";
 import { Icon } from "../shared/ui/Icon";
 import { TooltipTrigger } from "../shared/ui/TooltipTrigger";
-import { flatColorAreaChartIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, refreshIcon } from "../shared/ui/icons";
+import { flatColorAboutIcon, flatColorAreaChartIcon, flatColorSalesPerformanceIcon, flatColorSettingsIcon, refreshIcon } from "../shared/ui/icons";
 import { useMessage } from "../shared/ui/message";
 import { VirtualList } from "../shared/virtual/VirtualList";
 import { useI18n } from "../i18n/store";
@@ -27,7 +27,7 @@ type MenuItem =
   | { kind: "page"; path: string; label: string; icon: IconifyIcon | string }
   | { kind: "group"; label: string };
 
-const keptAlivePages = ["/", "/calls", "/settings", "/harness/cursor"];
+const keptAlivePages = ["/", "/calls", "/settings", "/harness/cursor", "/about"];
 const readAdStorageKey = "cursor-byok:read-ad-ids";
 const dismissedAdStorageKey = "cursor-byok:dismissed-ad-ids";
 
@@ -66,6 +66,7 @@ export function AppLayout() {
     { kind: "page", path: "/harness/cursor", label: "Cursor", icon: cursorIconUrl },
     { kind: "group", label: t("设置") },
     { kind: "page", path: "/settings", label: t("系统设置"), icon: flatColorSettingsIcon },
+    { kind: "page", path: "/about", label: t("关于"), icon: flatColorAboutIcon },
   ];
 
   useEffect(() => {
@@ -215,7 +216,7 @@ export function AppLayout() {
       <div className={styles.actionRegion}>
         <Card className={styles.actions}>
           <div ref={setLeftActionTarget} className={styles.pageActions} />
-          {location.pathname !== "/" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh()}>
+          {location.pathname !== "/" && location.pathname !== "/about" && <TooltipTrigger label={t("刷新")}><button className={controls.iconButton} aria-label={t("刷新")} disabled={busy} onClick={() => void appStore.refresh()}>
             <Icon className={busy ? controls.spin : ""} icon={refreshIcon} size="1.1em" />
           </button></TooltipTrigger>}
           <div ref={setRightActionTarget} className={styles.pageActions} />
