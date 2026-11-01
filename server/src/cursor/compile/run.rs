@@ -23,6 +23,10 @@ use crate::{
 
 use super::{break_messages, context, insert_messages, model};
 
+#[cfg(test)]
+#[path = "run_tests.rs"]
+mod tests;
+
 struct ActionProjection {
     mode: i32,
     turn_user: Option<pb::UserMessage>,
@@ -142,7 +146,7 @@ pub(crate) async fn prepare(
         starts_turn,
         compacting,
         background_completion,
-    } = action(request)?;
+    } = action(request, &conversation_id)?;
     let checkpoint_mode = if request.subagent_type_name.is_some() {
         Mode::Subagent
     } else {
@@ -417,7 +421,10 @@ fn execution_run_id(request_id: &str) -> RunId {
     RunId::new(format!("{request_id}:{}", &execution_id[..8]))
 }
 
-fn action(request: &pb::AgentRunRequest) -> Result<ActionProjection> {
+fn action(
+    request: &pb::AgentRunRequest,
+    conversation_id: &ConversationId,
+) -> Result<ActionProjection> {
     let conversation_mode = request
         .conversation_state
         .as_ref()
@@ -441,7 +448,7 @@ fn action(request: &pb::AgentRunRequest) -> Result<ActionProjection> {
     };
     match action {
         pb::conversation_action::Action::UserMessageAction(action) => {
-            let user = action.user_message.as_ref().ok_or_else(|| {
+            let mut user = action.user_message.clone().ok_or_else(|| {
                 Error::Protocol("Cursor user message action has no UserMessage".into())
             })?;
             let mode = if user.mode == pb::AgentMode::Unspecified as i32 {
@@ -450,14 +457,28 @@ fn action(request: &pb::AgentRunRequest) -> Result<ActionProjection> {
                 user.mode
             };
             if user.message_id.is_empty() {
-                return Err(Error::Protocol(
-                    "Cursor user message action has no message_id".into(),
-                ));
+                let Some(subagent_type) = request.subagent_type_name.as_deref() else {
+                    return Err(Error::Protocol(
+                        "Cursor user message action has no message_id".into(),
+                    ));
+                };
+                let empty_state = pb::ConversationStateStructure::default();
+                let state = request.conversation_state.as_ref().unwrap_or(&empty_state);
+                let identity = serde_json::to_vec(&(
+                    conversation_id.as_str(),
+                    subagent_type,
+                    &state.root_prompt_messages_json,
+                    &state.turns,
+                    &state.summary,
+                    &user.text,
+                ))?;
+                user.message_id =
+                    format!("subagent-user:{}", BlobId::digest(&identity).to_base64());
             }
             if user.text.trim() == "/summarize" {
                 return Ok(ActionProjection {
                     mode,
-                    turn_user: Some(user.clone()),
+                    turn_user: Some(user),
                     action_context: String::new(),
                     event_id: None,
                     input_id: None,
@@ -482,7 +503,7 @@ fn action(request: &pb::AgentRunRequest) -> Result<ActionProjection> {
             let input_id = format!("cursor:user:{}", user.message_id);
             Ok(ActionProjection {
                 mode,
-                turn_user: Some(user.clone()),
+                turn_user: Some(user),
                 action_context: context.join("\n\n"),
                 event_id: None,
                 input_id: Some(input_id),

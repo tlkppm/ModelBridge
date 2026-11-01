@@ -345,6 +345,142 @@ async fn background_shell_completion_wakes_the_parent_with_the_captured_notifica
     assert_eq!(metadata.task_id.as_deref(), Some("977679"));
 }
 
+#[tokio::test]
+async fn subagent_retries_without_message_ids_reuse_persisted_runtime() {
+    let (_directory, store) = fixtures::temp_store().await;
+    let provider = fake_provider::FakeProvider::default();
+    provider.push(stop_response("child-model-1", "child completed"));
+    let assets = PromptAssets::load(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("prompt/cursor")
+            .as_path(),
+    )
+    .unwrap();
+    let registry = TransportRegistry::new(
+        store.clone(),
+        Arc::new(provider.clone()),
+        PromptCompiler::new(assets),
+    );
+    let request = subagent_user_run(
+        "Inspect the project",
+        pb::ConversationStateStructure::default(),
+    );
+    let first = registry.get_or_create("child-transport-1").await.unwrap();
+    let (checkpoint, blobs) = drive_completion(&first, request.clone()).await;
+    let conversation_id = cursor_server::model::ConversationId::new("idless-child-conversation");
+    let before = store.load_current_messages(&conversation_id).await.unwrap();
+    let runtime = before
+        .iter()
+        .find(|message| message.runtime_event_id.is_some())
+        .unwrap()
+        .clone();
+    let turn = pb::ConversationTurnStructure::decode(
+        blobs
+            .get(checkpoint.turns.last().unwrap())
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+    let pb::conversation_turn_structure::Turn::AgentConversationTurn(turn) = turn.turn.unwrap()
+    else {
+        panic!("expected a child conversation turn")
+    };
+    let user = pb::UserMessage::decode(blobs.get(&turn.user_message).unwrap().as_slice()).unwrap();
+    assert!(user.message_id.starts_with("subagent-user:"));
+    assert_eq!(user.text, "Inspect the project");
+
+    provider.push(stop_response("child-model-2", "child retried"));
+    let retry = registry.get_or_create("child-transport-2").await.unwrap();
+    drive_completion(&retry, request).await;
+    let after = store.load_current_messages(&conversation_id).await.unwrap();
+    let runtimes = after
+        .iter()
+        .filter(|message| message.runtime_event_id.is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(runtimes.len(), 1);
+    assert_eq!(runtimes[0], &runtime);
+    assert!(!provider.requests().is_empty());
+    registry.shutdown().await;
+}
+
+#[tokio::test]
+async fn subagent_followups_without_message_ids_preserve_the_provider_prefix() {
+    let (_directory, store) = fixtures::temp_store().await;
+    let provider = fake_provider::FakeProvider::default();
+    provider.push(stop_response("followup-model-1", "first child response"));
+    provider.push(stop_response("followup-model-2", "second child response"));
+    let assets = PromptAssets::load(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("prompt/cursor")
+            .as_path(),
+    )
+    .unwrap();
+    let registry = TransportRegistry::new(
+        store.clone(),
+        Arc::new(provider.clone()),
+        PromptCompiler::new(assets),
+    );
+    let first = registry.get_or_create("child-followup-1").await.unwrap();
+    let (checkpoint, _) = drive_completion(
+        &first,
+        subagent_user_run("continue", pb::ConversationStateStructure::default()),
+    )
+    .await;
+    let second = registry.get_or_create("child-followup-2").await.unwrap();
+    drive_completion(&second, subagent_user_run("continue", checkpoint)).await;
+    let requests = provider.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        requests[0].history,
+        requests[1].history[..requests[0].history.len()]
+    );
+    let messages = store
+        .load_current_messages(&cursor_server::model::ConversationId::new(
+            "idless-child-conversation",
+        ))
+        .await
+        .unwrap();
+    let runtimes = messages
+        .iter()
+        .filter_map(|message| message.runtime_event_id.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(runtimes.len(), 2);
+    assert_ne!(runtimes[0], runtimes[1]);
+    registry.shutdown().await;
+}
+
+fn subagent_user_run(text: &str, state: pb::ConversationStateStructure) -> pb::AgentClientMessage {
+    pb::AgentClientMessage {
+        message: Some(pb::agent_client_message::Message::RunRequest(
+            pb::AgentRunRequest {
+                conversation_id: Some("idless-child-conversation".into()),
+                conversation_group_id: Some("parent-conversation".into()),
+                subagent_type_name: Some("generalPurpose".into()),
+                conversation_state: Some(state),
+                requested_model: Some(pb::RequestedModel {
+                    model_id: "test-model".into(),
+                    ..Default::default()
+                }),
+                action: Some(pb::ConversationAction {
+                    action: Some(pb::conversation_action::Action::UserMessageAction(
+                        pb::UserMessageAction {
+                            user_message: Some(pb::UserMessage {
+                                text: text.into(),
+                                mode: pb::AgentMode::Unspecified as i32,
+                                ..Default::default()
+                            }),
+                            request_context: Some(pb::RequestContext::default()),
+                            ..Default::default()
+                        },
+                    )),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )),
+    }
+}
+
 async fn drive_completion(
     handle: &TransportHandle,
     message: pb::AgentClientMessage,
@@ -368,6 +504,8 @@ async fn drive_completion(
             .unwrap();
         let (flags, payload) = connect::decode_frames(&frame).unwrap().pop().unwrap();
         if flags & connect::END_STREAM_FLAG != 0 {
+            let terminal: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+            assert!(terminal.get("error").is_none(), "{terminal}");
             break;
         }
         let server = pb::AgentServerMessage::decode(payload).unwrap();

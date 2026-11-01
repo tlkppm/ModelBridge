@@ -1,6 +1,6 @@
 {
   "name": "cursor-byok-desktop",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "ModelBridge desktop model gateway",
   "type": "module",
   "scripts": {
