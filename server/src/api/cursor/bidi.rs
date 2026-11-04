@@ -153,13 +153,44 @@ fn history_image_count(history: &agent::ConversationHistory) -> usize {
         .sum()
 }
 
-pub fn decode(request: &ai::BidiAppendRequest) -> Result<DecodedAppend> {
-    let request_id = request
+pub fn request_id(request: &ai::BidiAppendRequest) -> Result<&str> {
+    request
         .request_id
         .as_ref()
         .map(|id| id.request_id.as_str())
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| Error::Protocol("BidiAppend request_id is required".into()))?;
+        .ok_or_else(|| Error::Protocol("BidiAppend request_id is required".into()))
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct InferenceClientMessage {
+    #[prost(message, optional, tag = "1")]
+    run_request: Option<InferenceRunRequest>,
+}
+
+#[derive(Clone, PartialEq, Message)]
+struct InferenceRunRequest {
+    #[prost(string, tag = "1")]
+    conversation_id: String,
+}
+
+pub fn is_inference_run(request: &ai::BidiAppendRequest) -> bool {
+    if request.append_seqno != 0 || !request.data_binary.is_empty() {
+        return false;
+    }
+    let Ok(payload) = hex::decode(&request.data) else {
+        return false;
+    };
+    let Ok(message) = InferenceClientMessage::decode(payload.as_slice()) else {
+        return false;
+    };
+    message
+        .run_request
+        .is_some_and(|request| uuid::Uuid::parse_str(&request.conversation_id).is_ok())
+}
+
+pub fn decode(request: &ai::BidiAppendRequest) -> Result<DecodedAppend> {
+    let request_id = request_id(request)?;
     if !request.data_binary.is_empty() {
         return Err(Error::Protocol(
             "BidiAppend data_binary is not part of the captured protocol".into(),
@@ -224,6 +255,41 @@ mod tests {
     struct RunInferenceClientMessage {
         #[prost(message, optional, tag = "1")]
         run_request: Option<RunInferenceRunRequest>,
+    }
+
+    #[test]
+    fn inference_classification_requires_an_initial_inference_run() {
+        let agent_message = agent::AgentClientMessage {
+            message: Some(agent::agent_client_message::Message::RunRequest(
+                agent::AgentRunRequest {
+                    conversation_state: Some(agent::ConversationStateStructure::default()),
+                    conversation_id: Some("a0000000-0000-0000-0000-000000000000".into()),
+                    ..Default::default()
+                },
+            )),
+        };
+        let mut request = ai::BidiAppendRequest {
+            data: hex::encode(agent_message.encode_to_vec()),
+            ..Default::default()
+        };
+        assert!(!is_inference_run(&request));
+        request.data = hex::encode(
+            RunInferenceClientMessage {
+                run_request: Some(RunInferenceRunRequest {
+                    conversation_id: "a0000000-0000-0000-0000-000000000000".into(),
+                }),
+            }
+            .encode_to_vec(),
+        );
+        assert!(is_inference_run(&request));
+        request.append_seqno = 1;
+        assert!(!is_inference_run(&request));
+        request.append_seqno = 0;
+        request.data_binary = vec![1];
+        assert!(!is_inference_run(&request));
+        request.data_binary.clear();
+        request.data = "0e".into();
+        assert!(!is_inference_run(&request));
     }
 
     #[test]

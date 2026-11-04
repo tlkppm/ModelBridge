@@ -219,12 +219,13 @@ impl TransportRegistry {
             .map(|transport| transport.handle.clone())
     }
 
-    pub async fn mark_upstream(&self, request_id: &str) {
+    pub async fn mark_upstream(&self, request_id: &str) -> u64 {
         let mut upstream = self.inner.upstream.lock().await;
         let generation = upstream.get(request_id).copied().unwrap_or_default() + 1;
         upstream.insert(request_id.into(), generation);
         drop(upstream);
         self.inner.route_changed.notify_waiters();
+        generation
     }
 
     pub async fn upstream(&self, request_id: &str) -> bool {

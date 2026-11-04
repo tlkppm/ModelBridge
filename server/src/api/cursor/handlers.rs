@@ -47,6 +47,14 @@ fn router_with_proxy(
     Router::new()
         .route("/__byok-api__/healthz", get(health))
         .route("/agent.v1.AgentService/RunSSE", post(run_sse_handler))
+        .route(
+            "/aiserver.v1.InferenceService/RunInferenceSSE",
+            post(upstream_bidi_sse_handler),
+        )
+        .route(
+            "/aiserver.v1.HealthService/StreamBidiSSE",
+            post(upstream_bidi_sse_handler),
+        )
         .route("/aiserver.v1.BidiService/BidiAppend", post(bidi_handler))
         .route(
             "/aiserver.v1.AiService/AvailableDocs",
@@ -233,6 +241,44 @@ async fn run_sse_handler(
     }
 }
 
+async fn upstream_bidi_sse_handler(
+    State(registry): State<TransportRegistry>,
+    Extension(proxy): Extension<CursorProxy>,
+    request: Request<Body>,
+) -> Result<Response<Body>> {
+    let (parts, body) = buffered(request).await?;
+    let request: agent::BidiRequestId = connect::decode_unary(&body)?;
+    if request.request_id.is_empty() {
+        return Err(crate::Error::Protocol(
+            "upstream Bidi stream request_id is required".into(),
+        ));
+    }
+    tracing::Span::current().record("request_id", request.request_id.as_str());
+    if registry.local(&request.request_id).await.is_some() {
+        return Err(crate::Error::Protocol(
+            "upstream Bidi stream cannot reuse a local Agent request_id".into(),
+        ));
+    }
+    let generation = registry.mark_upstream(&request.request_id).await;
+    tracing::info!(
+        route = "upstream",
+        "Cursor diagnostic: upstream Bidi stream route selected"
+    );
+    let response = match proxy::forward(
+        Extension(proxy),
+        Request::from_parts(parts, Body::from(body)),
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            registry.finish_upstream(request.request_id, generation);
+            return Err(error);
+        }
+    };
+    Ok(run_sse::upstream(registry, request.request_id, generation, response, None).await)
+}
+
 async fn bidi_handler(
     State(registry): State<TransportRegistry>,
     Extension(proxy): Extension<CursorProxy>,
@@ -240,7 +286,35 @@ async fn bidi_handler(
 ) -> Result<Response<Body>> {
     let (parts, body) = buffered(request).await?;
     let request: ai::BidiAppendRequest = connect::decode_unary(&body)?;
-    let decoded = bidi::decode(&request)?;
+    let request_id = bidi::request_id(&request)?;
+    tracing::Span::current().record("request_id", request_id);
+    if registry.local(request_id).await.is_none() {
+        let upstream = registry.upstream(request_id).await;
+        if upstream || bidi::is_inference_run(&request) {
+            if !upstream {
+                registry.mark_upstream(request_id).await;
+            }
+            return forward_upstream_bidi(&registry, proxy, &request, parts, body).await;
+        }
+    }
+    let decoded = match bidi::decode(&request) {
+        Ok(decoded) => decoded,
+        Err(error) => {
+            if registry.local(request_id).await.is_none()
+                && matches!(
+                    tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        registry.wait_route(request_id),
+                    )
+                    .await,
+                    Ok(crate::cursor::transport::TransportRoute::Upstream(_))
+                )
+            {
+                return forward_upstream_bidi(&registry, proxy, &request, parts, body).await;
+            }
+            return Err(error);
+        }
+    };
     tracing::Span::current().record("request_id", decoded.request_id.as_str());
     diagnostics::log_append(&decoded);
     let first_model = decoded.model_id().map(str::to_owned);
@@ -353,6 +427,45 @@ async fn bidi_handler(
     );
     Ok(response)
 }
+
+async fn forward_upstream_bidi(
+    registry: &TransportRegistry,
+    proxy: CursorProxy,
+    request: &ai::BidiAppendRequest,
+    parts: axum::http::request::Parts,
+    body: Bytes,
+) -> Result<Response<Body>> {
+    let request_id = bidi::request_id(request)?;
+    tracing::info!(
+        route = "upstream",
+        append_seqno = request.append_seqno,
+        "Cursor diagnostic: forwarding upstream Bidi payload without Agent decoding"
+    );
+    let trace = registry.trace(request_id);
+    trace.resume();
+    trace.request(
+        "bidi_request",
+        body.clone(),
+        trace_outcome(
+            serde_json::json!({
+                "append_seqno": request.append_seqno,
+                "message_type": "upstream_payload",
+            }),
+            true,
+            "upstream",
+            None,
+        ),
+    );
+    proxy::forward(
+        Extension(proxy),
+        Request::from_parts(parts, Body::from(body)),
+    )
+    .await
+}
+
+#[cfg(test)]
+#[path = "handlers_tests.rs"]
+mod tests;
 
 fn trace_outcome(
     mut metadata: serde_json::Value,

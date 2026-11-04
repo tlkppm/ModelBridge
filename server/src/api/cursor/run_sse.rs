@@ -157,12 +157,13 @@ pub async fn upstream(
     if let Some(trace) = &trace {
         trace.response_started(parts.status.as_u16());
     }
+    let guard = UpstreamRunGuard {
+        registry,
+        request_id,
+        generation,
+    };
     let stream = async_stream::stream! {
-        let _guard = UpstreamRunGuard {
-            registry,
-            request_id,
-            generation,
-        };
+        let _guard = guard;
         let mut trace = TraceStreamSink::new(trace, "cursor_official");
         let mut body = body.into_data_stream();
         while let Some(chunk) = body.next().await {

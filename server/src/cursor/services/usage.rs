@@ -17,7 +17,6 @@ const CATEGORIES: [(&str, &str); 8] = [
     ("summarized_conversation", "Summarized conversation"),
     ("conversation", "Conversation"),
 ];
-const EASTER_EGG_CATEGORY: (&str, &str) = ("leookun", "@leookun stole 1 token 😂");
 
 const SYSTEM: usize = 0;
 const TOOLS: usize = 1;
@@ -92,13 +91,12 @@ pub(crate) fn breakdown(
         measures[SUMMARY].characters = summary.character_count.unwrap_or(0) as u64;
         estimates[SUMMARY] = summary.estimated_tokens as u64;
     }
-    let easter_egg_tokens = 1_u64;
     let categorized_tokens = used_tokens as u64;
     fit_special_estimates(&mut estimates, categorized_tokens);
     estimates[CONVERSATION] =
         categorized_tokens.saturating_sub(estimates[..CONVERSATION].iter().sum::<u64>());
 
-    let mut categories = CATEGORIES
+    let categories = CATEGORIES
         .iter()
         .enumerate()
         .map(|(index, (id, label))| pb::PromptTokenBreakdownCategory {
@@ -109,12 +107,6 @@ pub(crate) fn breakdown(
                 .then_some(measures[index].characters.min(u32::MAX as u64) as u32),
         })
         .collect::<Vec<_>>();
-    categories.push(pb::PromptTokenBreakdownCategory {
-        id: EASTER_EGG_CATEGORY.0.into(),
-        label: EASTER_EGG_CATEGORY.1.into(),
-        estimated_tokens: easter_egg_tokens as u32,
-        character_count: None,
-    });
     Ok(pb::PromptTokenBreakdownSnapshot {
         total_used_tokens: used_tokens,
         max_tokens,
@@ -215,5 +207,78 @@ fn fit_special_estimates(estimates: &mut [u64; 8], total: u64) {
         }
         estimates[index] += 1;
         remainder -= 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn breakdown_contains_only_measured_categories_and_preserves_actual_total() {
+        for used_tokens in [0, 1, 10, 1_000, u32::MAX] {
+            let snapshot = breakdown(
+                used_tokens,
+                u32::MAX,
+                None,
+                "system instructions",
+                &[],
+                &HashSet::new(),
+                &[],
+            )
+            .unwrap();
+            assert_eq!(snapshot.total_used_tokens, used_tokens);
+            assert_eq!(snapshot.max_tokens, u32::MAX);
+            assert_eq!(snapshot.categories.len(), CATEGORIES.len());
+            assert_eq!(
+                snapshot
+                    .categories
+                    .iter()
+                    .map(|category| u64::from(category.estimated_tokens))
+                    .sum::<u64>(),
+                u64::from(used_tokens)
+            );
+            for (category, (id, label)) in snapshot.categories.iter().zip(CATEGORIES) {
+                assert_eq!(category.id, id);
+                assert_eq!(category.label, label);
+            }
+        }
+    }
+
+    #[test]
+    fn baseline_keeps_summary_measurement_without_carrying_unmeasured_categories() {
+        let baseline = pb::PromptTokenBreakdownSnapshot {
+            total_used_tokens: 100,
+            max_tokens: 1_000,
+            categories: vec![
+                pb::PromptTokenBreakdownCategory {
+                    id: "summarized_conversation".into(),
+                    label: "Summarized conversation".into(),
+                    estimated_tokens: 25,
+                    character_count: Some(80),
+                },
+                pb::PromptTokenBreakdownCategory {
+                    id: "leookun".into(),
+                    label: "legacy artificial category".into(),
+                    estimated_tokens: 1,
+                    character_count: None,
+                },
+            ],
+        };
+        let snapshot =
+            breakdown(100, 1_000, Some(&baseline), "", &[], &HashSet::new(), &[]).unwrap();
+        assert_eq!(snapshot.categories.len(), CATEGORIES.len());
+        assert!(!snapshot
+            .categories
+            .iter()
+            .any(|category| category.id == "leookun"));
+        let summary = snapshot
+            .categories
+            .iter()
+            .find(|category| category.id == "summarized_conversation")
+            .unwrap();
+        assert_eq!(summary.estimated_tokens, 25);
+        assert_eq!(summary.character_count, Some(80));
+        assert_eq!(baseline.categories.len(), 2);
     }
 }
