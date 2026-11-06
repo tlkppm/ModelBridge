@@ -1,4 +1,6 @@
 //! Accepts ordered Cursor Bidi append requests and routes them by request_id.
+use std::borrow::Cow;
+
 use prost::Message;
 
 use crate::{
@@ -175,13 +177,13 @@ struct InferenceRunRequest {
 }
 
 pub fn is_inference_run(request: &ai::BidiAppendRequest) -> bool {
-    if request.append_seqno != 0 || !request.data_binary.is_empty() {
+    if request.append_seqno != 0 {
         return false;
     }
-    let Ok(payload) = hex::decode(&request.data) else {
+    let Ok(payload) = payload(request) else {
         return false;
     };
-    let Ok(message) = InferenceClientMessage::decode(payload.as_slice()) else {
+    let Ok(message) = InferenceClientMessage::decode(payload.as_ref()) else {
         return false;
     };
     message
@@ -189,24 +191,32 @@ pub fn is_inference_run(request: &ai::BidiAppendRequest) -> bool {
         .is_some_and(|request| uuid::Uuid::parse_str(&request.conversation_id).is_ok())
 }
 
+pub(super) fn payload(request: &ai::BidiAppendRequest) -> Result<Cow<'_, [u8]>> {
+    if !request.data_binary.is_empty() {
+        if !request.data.is_empty() {
+            return Err(Error::Protocol(
+                "BidiAppend cannot contain both data and data_binary".into(),
+            ));
+        }
+        return Ok(Cow::Borrowed(&request.data_binary));
+    }
+    hex::decode(&request.data)
+        .map(Cow::Owned)
+        .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))
+}
+
 pub fn decode(request: &ai::BidiAppendRequest) -> Result<DecodedAppend> {
     let request_id = request_id(request)?;
-    if !request.data_binary.is_empty() {
-        return Err(Error::Protocol(
-            "BidiAppend data_binary is not part of the captured protocol".into(),
-        ));
-    }
-    if request.data.is_empty() {
+    let payload = payload(request)?;
+    if payload.is_empty() {
         return Err(Error::Protocol(
             "BidiAppend contains no AgentClientMessage".into(),
         ));
     }
-    let payload = hex::decode(&request.data)
-        .map_err(|error| Error::Protocol(format!("invalid BidiAppend hex: {error}")))?;
     Ok(DecodedAppend {
         request_id: request_id.into(),
         seqno: request.append_seqno,
-        message: agent::AgentClientMessage::decode(payload.as_slice())?,
+        message: agent::AgentClientMessage::decode(payload.as_ref())?,
     })
 }
 
@@ -289,6 +299,57 @@ mod tests {
         assert!(!is_inference_run(&request));
         request.data_binary.clear();
         request.data = "0e".into();
+        assert!(!is_inference_run(&request));
+    }
+
+    #[test]
+    fn binary_agent_payload_decodes_like_hex() {
+        let message = agent::AgentClientMessage {
+            message: Some(agent::agent_client_message::Message::ClientHeartbeat(
+                Default::default(),
+            )),
+        };
+        let request = ai::BidiAppendRequest {
+            request_id: Some(ai::BidiRequestId {
+                request_id: "binary-agent".into(),
+            }),
+            append_seqno: 3,
+            data_binary: message.encode_to_vec(),
+            ..Default::default()
+        };
+        let decoded = decode(&request).expect("Cursor binary Agent messages must be accepted");
+        assert_eq!(decoded.request_id, "binary-agent");
+        assert_eq!(decoded.seqno, 3);
+        assert_eq!(decoded.message, message);
+    }
+
+    #[test]
+    fn binary_inference_run_is_not_decoded_as_agent() {
+        let request = ai::BidiAppendRequest {
+            data_binary: RunInferenceClientMessage {
+                run_request: Some(RunInferenceRunRequest {
+                    conversation_id: "a0000000-0000-0000-0000-000000000000".into(),
+                }),
+            }
+            .encode_to_vec(),
+            ..Default::default()
+        };
+        assert!(is_inference_run(&request));
+    }
+
+    #[test]
+    fn conflicting_payload_encodings_are_rejected() {
+        let request = ai::BidiAppendRequest {
+            request_id: Some(ai::BidiRequestId {
+                request_id: "ambiguous-agent".into(),
+            }),
+            data: "1a0408011a00".into(),
+            data_binary: vec![0x32, 0],
+            ..Default::default()
+        };
+        assert!(
+            matches!(decode(&request), Err(Error::Protocol(error)) if error.contains("both data and data_binary"))
+        );
         assert!(!is_inference_run(&request));
     }
 

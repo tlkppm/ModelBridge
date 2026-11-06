@@ -10,7 +10,7 @@ use tower_http::decompression::RequestDecompressionLayer;
 
 use crate::{
     api::cursor::{
-        bidi, diagnostics,
+        bidi, diagnostics, health as health_diagnostic,
         proxy::{self, CursorProxy},
         run_sse,
     },
@@ -53,7 +53,7 @@ fn router_with_proxy(
         )
         .route(
             "/aiserver.v1.HealthService/StreamBidiSSE",
-            post(upstream_bidi_sse_handler),
+            post(health_bidi_sse_handler),
         )
         .route("/aiserver.v1.BidiService/BidiAppend", post(bidi_handler))
         .route(
@@ -238,7 +238,24 @@ async fn run_sse_handler(
             )
             .await)
         }
+        crate::cursor::transport::TransportRoute::Health => Err(crate::Error::Protocol(
+            "Agent stream cannot reuse a Health request_id".into(),
+        )),
     }
+}
+
+async fn health_bidi_sse_handler(
+    State(registry): State<TransportRegistry>,
+    request: Request<Body>,
+) -> Result<Response<Body>> {
+    let (_, body) = buffered(request).await?;
+    let request: ai::BidiRequestId = connect::decode_unary(&body)?;
+    tracing::Span::current().record("request_id", request.request_id.as_str());
+    tracing::info!(
+        route = "health",
+        "Cursor diagnostic: local Health stream selected"
+    );
+    health_diagnostic::stream(registry, request.request_id).await
 }
 
 async fn upstream_bidi_sse_handler(
@@ -254,9 +271,11 @@ async fn upstream_bidi_sse_handler(
         ));
     }
     tracing::Span::current().record("request_id", request.request_id.as_str());
-    if registry.local(&request.request_id).await.is_some() {
+    if registry.local(&request.request_id).await.is_some()
+        || registry.health(&request.request_id).await
+    {
         return Err(crate::Error::Protocol(
-            "upstream Bidi stream cannot reuse a local Agent request_id".into(),
+            "upstream Bidi stream cannot reuse a local request_id".into(),
         ));
     }
     let generation = registry.mark_upstream(&request.request_id).await;
@@ -288,6 +307,10 @@ async fn bidi_handler(
     let request: ai::BidiAppendRequest = connect::decode_unary(&body)?;
     let request_id = bidi::request_id(&request)?;
     tracing::Span::current().record("request_id", request_id);
+    if registry.health(request_id).await {
+        health_diagnostic::append(&registry, &request).await?;
+        return Ok(append_response());
+    }
     if registry.local(request_id).await.is_none() {
         let upstream = registry.upstream(request_id).await;
         if upstream || bidi::is_inference_run(&request) {
@@ -297,24 +320,29 @@ async fn bidi_handler(
             return forward_upstream_bidi(&registry, proxy, &request, parts, body).await;
         }
     }
-    let decoded = match bidi::decode(&request) {
-        Ok(decoded) => decoded,
-        Err(error) => {
-            if registry.local(request_id).await.is_none()
-                && matches!(
-                    tokio::time::timeout(
-                        std::time::Duration::from_secs(2),
-                        registry.wait_route(request_id),
-                    )
-                    .await,
-                    Ok(crate::cursor::transport::TransportRoute::Upstream(_))
-                )
-            {
+    let decoded = bidi::decode(&request);
+    let needs_route = match &decoded {
+        Ok(message) => message.model_id().is_none(),
+        Err(_) => true,
+    };
+    if needs_route && registry.local(request_id).await.is_none() {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            registry.wait_route(request_id),
+        )
+        .await
+        {
+            Ok(crate::cursor::transport::TransportRoute::Health) => {
+                health_diagnostic::append(&registry, &request).await?;
+                return Ok(append_response());
+            }
+            Ok(crate::cursor::transport::TransportRoute::Upstream(_)) => {
                 return forward_upstream_bidi(&registry, proxy, &request, parts, body).await;
             }
-            return Err(error);
+            _ => {}
         }
-    };
+    }
+    let decoded = decoded?;
     tracing::Span::current().record("request_id", decoded.request_id.as_str());
     diagnostics::log_append(&decoded);
     let first_model = decoded.model_id().map(str::to_owned);
@@ -419,13 +447,16 @@ async fn bidi_handler(
             return Err(error);
         }
     }
-    let mut response = Response::new(axum::body::Body::empty());
-    *response.status_mut() = StatusCode::OK;
+    Ok(append_response())
+}
+
+fn append_response() -> Response<Body> {
+    let mut response = Response::new(Body::empty());
     response.headers_mut().insert(
         header::CONTENT_TYPE,
         HeaderValue::from_static("application/proto"),
     );
-    Ok(response)
+    response
 }
 
 async fn forward_upstream_bidi(

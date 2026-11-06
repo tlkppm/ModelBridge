@@ -87,6 +87,18 @@ fn append_wire(request_id: &str, payload: Vec<u8>, seqno: i64) -> Vec<u8> {
     .encode_to_vec()
 }
 
+fn binary_append_wire(request_id: &str, payload: Vec<u8>, seqno: i64) -> Vec<u8> {
+    ai::BidiAppendRequest {
+        request_id: Some(ai::BidiRequestId {
+            request_id: request_id.into(),
+        }),
+        append_seqno: seqno,
+        data_binary: payload,
+        ..Default::default()
+    }
+    .encode_to_vec()
+}
+
 fn append_request(wire: Vec<u8>) -> Request<Body> {
     Request::post("/aiserver.v1.BidiService/BidiAppend")
         .header(header::CONTENT_TYPE, "application/proto")
@@ -118,12 +130,18 @@ fn inference_payload(conversation_id: &str) -> Vec<u8> {
 #[tokio::test]
 async fn inference_first_append_is_forwarded_without_agent_decoding() {
     let (registry, mut upstream) = setup().await;
-    for conversation_id in [
-        "00000000-0000-0000-0000-000000000000",
-        "f0000000-0000-0000-0000-000000000000",
-        "a0000000-0000-0000-0000-000000000000",
+    for (conversation_id, binary) in [
+        ("00000000-0000-0000-0000-000000000000", false),
+        ("f0000000-0000-0000-0000-000000000000", false),
+        ("a0000000-0000-0000-0000-000000000000", false),
+        ("a0000000-0000-0000-0000-000000000000", true),
     ] {
-        let wire = append_wire("inference-request", inference_payload(conversation_id), 0);
+        let payload = inference_payload(conversation_id);
+        let wire = if binary {
+            binary_append_wire("inference-request", payload, 0)
+        } else {
+            append_wire("inference-request", payload, 0)
+        };
         let response = bidi_handler(
             State(registry.clone()),
             Extension(upstream.proxy.clone()),
@@ -320,7 +338,7 @@ fn health_stream_request(request_id: &str) -> Request<Body> {
 #[tokio::test]
 async fn health_first_append_waits_for_its_stream_instead_of_decoding_as_agent() {
     let (registry, mut upstream) = setup().await;
-    let wire = append_wire(
+    let wire = binary_append_wire(
         "health-append-first",
         HealthMessage {
             payload: "foo".into(),
@@ -345,31 +363,33 @@ async fn health_first_append_waits_for_its_stream_instead_of_decoding_as_agent()
             .is_err(),
         "the diagnostic's HealthRequest was rejected before its stream could register"
     );
-    let response = upstream_bidi_sse_handler(
+    let response = health_bidi_sse_handler(
         State(registry.clone()),
-        Extension(upstream.proxy.clone()),
         health_stream_request("health-append-first"),
     )
     .await
     .unwrap();
+    assert_eq!(pending.await.unwrap().unwrap().status(), StatusCode::OK);
+    let mut stream = response.into_body().into_data_stream();
+    let frame = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        futures_util::StreamExt::next(&mut stream),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .unwrap();
     assert_eq!(
-        pending.await.unwrap().unwrap().status(),
-        StatusCode::ACCEPTED
+        frame,
+        connect::encode_message(&HealthMessage {
+            payload: "foo".into()
+        })
+        .unwrap()
     );
-    let mut paths = Vec::new();
-    for _ in 0..2 {
-        let (path, body) = upstream.requests.recv().await.unwrap();
-        if path == "/aiserver.v1.BidiService/BidiAppend" {
-            assert_eq!(body.as_ref(), wire);
-        }
-        paths.push(path);
-    }
-    assert!(paths
-        .iter()
-        .any(|path| path == "/aiserver.v1.HealthService/StreamBidiSSE"));
-    drop(response);
-    wait_upstream_closed(&registry, "health-append-first").await;
+    assert!(upstream.requests.try_recv().is_err());
     assert!(registry.local("health-append-first").await.is_none());
+    assert!(!registry.upstream("health-append-first").await);
+    drop(stream);
     registry.shutdown().await;
 }
 

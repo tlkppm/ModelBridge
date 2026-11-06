@@ -8,6 +8,7 @@ use std::{
     },
 };
 
+use bytes::Bytes;
 use tokio::sync::{mpsc, Mutex, Notify};
 
 use crate::{
@@ -19,10 +20,10 @@ use crate::{
     provider::Provider,
     search::WebCache,
     store::Store,
-    Result,
+    Error, Result,
 };
 
-use super::{OutputHub, TransportHandle};
+use super::{OrderedInbox, OutputHub, TransportHandle};
 
 #[derive(Clone)]
 pub struct TransportRegistry {
@@ -33,6 +34,7 @@ struct RegistryInner {
     local: Mutex<HashMap<String, LocalTransport>>,
     next_local_generation: AtomicU64,
     upstream: Mutex<HashMap<String, u64>>,
+    health: Mutex<HashMap<String, HealthTransport>>,
     route_changed: Notify,
     store: Store,
     traces: CursorTraceService,
@@ -47,10 +49,17 @@ struct LocalTransport {
     handle: TransportHandle,
 }
 
+struct HealthTransport {
+    generation: u64,
+    inbox: OrderedInbox<Bytes>,
+    sender: mpsc::UnboundedSender<Bytes>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportRoute {
     Local,
     Upstream(u64),
+    Health,
 }
 
 impl TransportRegistry {
@@ -115,6 +124,7 @@ impl TransportRegistry {
                 local: Mutex::new(HashMap::new()),
                 next_local_generation: AtomicU64::new(1),
                 upstream: Mutex::new(HashMap::new()),
+                health: Mutex::new(HashMap::new()),
                 route_changed: Notify::new(),
                 traces: CursorTraceService::new(store.clone()),
                 conversations: ConversationRegistry::new(
@@ -232,6 +242,78 @@ impl TransportRegistry {
         self.inner.upstream.lock().await.contains_key(request_id)
     }
 
+    pub async fn open_health(
+        &self,
+        request_id: &str,
+    ) -> Result<(u64, mpsc::UnboundedReceiver<Bytes>)> {
+        let local = self.inner.local.lock().await;
+        let upstream = self.inner.upstream.lock().await;
+        let mut health = self.inner.health.lock().await;
+        if request_id.is_empty()
+            || local.contains_key(request_id)
+            || upstream.contains_key(request_id)
+            || health.contains_key(request_id)
+        {
+            return Err(Error::Protocol(
+                "Health stream requires a new nonempty request_id".into(),
+            ));
+        }
+        let generation = self
+            .inner
+            .next_local_generation
+            .fetch_add(1, Ordering::Relaxed);
+        let (sender, receiver) = mpsc::unbounded_channel();
+        health.insert(
+            request_id.into(),
+            HealthTransport {
+                generation,
+                inbox: OrderedInbox::starting_at(0),
+                sender,
+            },
+        );
+        drop(health);
+        drop(upstream);
+        drop(local);
+        self.inner.route_changed.notify_waiters();
+        Ok((generation, receiver))
+    }
+
+    pub async fn health(&self, request_id: &str) -> bool {
+        self.inner.health.lock().await.contains_key(request_id)
+    }
+
+    pub async fn append_health(&self, request_id: &str, seqno: i64, frame: Bytes) -> Result<()> {
+        if seqno < 0 {
+            return Err(Error::Protocol(
+                "Health append_seqno cannot be negative".into(),
+            ));
+        }
+        let mut health = self.inner.health.lock().await;
+        let transport = health
+            .get_mut(request_id)
+            .ok_or_else(|| Error::Protocol("Health diagnostic stream is closed".into()))?;
+        for (_, frame) in transport.inbox.push(seqno, frame) {
+            transport
+                .sender
+                .send(frame)
+                .map_err(|_| Error::Protocol("Health diagnostic stream is closed".into()))?;
+        }
+        Ok(())
+    }
+
+    pub fn finish_health(&self, request_id: String, generation: u64) {
+        let registry = self.clone();
+        tokio::spawn(async move {
+            let mut health = registry.inner.health.lock().await;
+            if health
+                .get(&request_id)
+                .is_some_and(|transport| transport.generation == generation)
+            {
+                health.remove(&request_id);
+            }
+        });
+    }
+
     pub async fn wait_route(&self, request_id: &str) -> TransportRoute {
         loop {
             let changed = self.inner.route_changed.notified();
@@ -242,6 +324,9 @@ impl TransportRegistry {
             }
             if let Some(generation) = self.inner.upstream.lock().await.get(request_id).copied() {
                 return TransportRoute::Upstream(generation);
+            }
+            if self.inner.health.lock().await.contains_key(request_id) {
+                return TransportRoute::Health;
             }
             changed.await;
         }
@@ -261,6 +346,7 @@ impl TransportRegistry {
         self.inner.conversations.shutdown().await;
         let handles = std::mem::take(&mut *self.inner.local.lock().await);
         self.inner.upstream.lock().await.clear();
+        self.inner.health.lock().await.clear();
         for transport in handles.into_values() {
             transport.handle.disconnect().await;
             let _ = tokio::time::timeout(

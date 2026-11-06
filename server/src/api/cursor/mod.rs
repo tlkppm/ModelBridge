@@ -3,6 +3,7 @@
 pub mod bidi;
 mod diagnostics;
 mod handlers;
+mod health;
 pub mod proxy;
 mod run_sse;
 
