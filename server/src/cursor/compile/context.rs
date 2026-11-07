@@ -512,6 +512,7 @@ pub fn dynamic_mcp(
 }
 
 fn normalize_mcp_parameters(tool_name: &str, mut parameters: Value) -> Result<Value> {
+    normalize_mcp_schema_numbers(&mut parameters);
     let schema = parameters
         .as_object_mut()
         .ok_or_else(|| invalid_mcp_parameters(tool_name))?;
@@ -545,6 +546,24 @@ fn normalize_mcp_parameters(tool_name: &str, mut parameters: Value) -> Result<Va
     // while adding the annotation to the model-facing copy.
     schema.insert("type".into(), Value::String("object".into()));
     Ok(parameters)
+}
+
+fn normalize_mcp_schema_numbers(value: &mut Value) {
+    match value {
+        Value::Number(number) if number.is_f64() => {
+            let Some(value) = number.as_f64().filter(|value| value.fract() == 0.0) else {
+                return;
+            };
+            if (0.0..u64::MAX as f64).contains(&value) {
+                *number = serde_json::Number::from(value as u64);
+            } else if (i64::MIN as f64..0.0).contains(&value) {
+                *number = serde_json::Number::from(value as i64);
+            }
+        }
+        Value::Array(values) => values.iter_mut().for_each(normalize_mcp_schema_numbers),
+        Value::Object(fields) => fields.values_mut().for_each(normalize_mcp_schema_numbers),
+        _ => {}
+    }
 }
 
 fn invalid_mcp_parameters(tool_name: &str) -> Error {
@@ -592,6 +611,261 @@ mod tests {
             content: content.into(),
             ..Default::default()
         }
+    }
+
+    fn protobuf_value(value: Value) -> prost_types::Value {
+        use prost_types::value::Kind;
+
+        let kind = match value {
+            Value::Null => Kind::NullValue(0),
+            Value::Bool(value) => Kind::BoolValue(value),
+            Value::Number(value) => Kind::NumberValue(value.as_f64().unwrap()),
+            Value::String(value) => Kind::StringValue(value),
+            Value::Array(values) => Kind::ListValue(prost_types::ListValue {
+                values: values.into_iter().map(protobuf_value).collect(),
+            }),
+            Value::Object(fields) => Kind::StructValue(prost_types::Struct {
+                fields: fields
+                    .into_iter()
+                    .map(|(key, value)| (key, protobuf_value(value)))
+                    .collect(),
+            }),
+        };
+        prost_types::Value { kind: Some(kind) }
+    }
+
+    #[test]
+    fn dynamic_mcp_normalizes_integer_constraints_from_both_encodings_and_sources() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "minProperties": 1.0,
+            "maxProperties": 4.0,
+            "properties": {
+                "path": {
+                    "type": "array",
+                    "minItems": 2.0,
+                    "maxItems": 20.0,
+                    "minContains": 1.0,
+                    "maxContains": 2.0,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "x": {"type": "number", "minimum": -1.5, "multipleOf": 0.25},
+                            "label": {"type": "string", "minLength": 1.0, "maxLength": 12.0}
+                        }
+                    }
+                }
+            },
+            "$defs": {"limit": {"type": "array", "minItems": 0.0}},
+            "anyOf": [{"properties": {"path": {"maxItems": 10.0}}}]
+        });
+        for json_encoding in [false, true] {
+            for contextual in [false, true] {
+                let wire = pb::McpToolDefinition {
+                    name: "cursor-computer-use-computer_drag".into(),
+                    provider_identifier: "cursor-computer-use".into(),
+                    tool_name: "computer_drag".into(),
+                    description: "drag along a path".into(),
+                    input_schema: (!json_encoding).then(|| protobuf_value(schema.clone())),
+                    input_schema_json: json_encoding.then(|| schema.to_string()),
+                };
+                let mut request = pb::AgentRunRequest::default();
+                let mut context = pb::RequestContext::default();
+                if contextual {
+                    context.tools.push(wire.clone());
+                } else {
+                    request.mcp_tools = Some(pb::McpTools {
+                        mcp_tools: vec![wire.clone()],
+                    });
+                }
+                let tools = dynamic_mcp(&request, &context).unwrap();
+                let (actual_wire, definition) = tools.values().next().unwrap();
+                assert_eq!(actual_wire, &wire);
+                for path in [
+                    "/minProperties",
+                    "/maxProperties",
+                    "/properties/path/minItems",
+                    "/properties/path/maxItems",
+                    "/properties/path/minContains",
+                    "/properties/path/maxContains",
+                    "/properties/path/items/properties/label/minLength",
+                    "/properties/path/items/properties/label/maxLength",
+                    "/$defs/limit/minItems",
+                    "/anyOf/0/properties/path/maxItems",
+                ] {
+                    assert!(
+                        definition.parameters.pointer(path).unwrap().is_u64(),
+                        "{path} was not encoded as an integer: json={json_encoding}, context={contextual}"
+                    );
+                }
+                assert_eq!(definition.parameters["properties"]["path"]["minItems"], 2);
+                assert_eq!(
+                    definition
+                        .parameters
+                        .pointer("/properties/path/items/properties/x/minimum"),
+                    Some(&serde_json::json!(-1.5))
+                );
+                assert_eq!(
+                    definition
+                        .parameters
+                        .pointer("/properties/path/items/properties/x/multipleOf"),
+                    Some(&serde_json::json!(0.25))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mcp_schema_normalization_preserves_number_values_and_integer_precision() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "maximum": u64::MAX,
+            "minimum": i64::MIN,
+            "properties": {
+                "fraction": {"type": "number", "default": 2.5},
+                "text": {"type": "string", "default": "2.0"},
+                "large": {"type": "number", "default": 18446744073709551616.0},
+                "small": {"type": "number", "default": -18446744073709551616.0},
+                "zero": {"type": "number", "default": -0.0},
+                "negative": {"type": "integer", "default": -2.0},
+                "invalid": {"type": "array", "minItems": 2.5}
+            }
+        });
+        let normalized = normalize_mcp_parameters("fixture", schema).unwrap();
+        assert_eq!(normalized["maximum"].as_u64(), Some(u64::MAX));
+        assert_eq!(normalized["minimum"].as_i64(), Some(i64::MIN));
+        assert_eq!(normalized["properties"]["fraction"]["default"], 2.5);
+        assert_eq!(normalized["properties"]["text"]["default"], "2.0");
+        assert_eq!(
+            normalized["properties"]["large"]["default"],
+            18446744073709551616.0
+        );
+        assert_eq!(
+            normalized["properties"]["small"]["default"],
+            -18446744073709551616.0
+        );
+        assert_eq!(
+            normalized["properties"]["zero"]["default"].as_u64(),
+            Some(0)
+        );
+        assert_eq!(
+            normalized["properties"]["negative"]["default"].as_i64(),
+            Some(-2)
+        );
+        assert_eq!(normalized["properties"]["invalid"]["minItems"], 2.5);
+    }
+
+    #[tokio::test]
+    async fn dynamic_mcp_integer_constraints_reach_strict_responses_upstream_as_integers() {
+        use std::time::Duration;
+
+        use axum::{http::StatusCode, response::IntoResponse, routing::post, Json, Router};
+        use futures_util::StreamExt;
+        use serde_json::json;
+        use tokio_util::sync::CancellationToken;
+
+        use crate::{
+            config::{ProviderConfig, ProviderKind},
+            cursor::prompting::{Mode, PromptAssets, PromptCompiler},
+            model::{
+                project_messages, CanonicalMessage, ModelInvocation, ModelRequest, ModelSpec,
+                Origin, Role,
+            },
+            provider::{FinishReason, ModelEvent, OpenAiResponsesProvider, Provider},
+        };
+
+        let backend = Router::new().route("/v1/responses", post(|Json(body): Json<Value>| async move {
+            let minimum = body["tools"].as_array().unwrap().iter()
+                .find(|tool| tool["name"] == "cursor-computer-use-computer_drag")
+                .unwrap().pointer("/parameters/properties/path/minItems").unwrap();
+            if !minimum.is_u64() {
+                return (StatusCode::BAD_REQUEST, Json(json!({
+                    "code": "invalid-argument",
+                    "error": "Failed to start sampling: [invalid_client_tool_schema] cursor-computer-use-computer_drag: invalid constraint value at #/properties/path: minItems must be an integer, got 2.0"
+                }))).into_response();
+            }
+            assert_eq!(minimum.as_u64(), Some(2));
+            ([("content-type", "text/event-stream")], concat!(
+                "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n",
+                "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
+            )).into_response()
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut tasks = tokio::task::JoinSet::new();
+        tasks.spawn(async move { axum::serve(listener, backend).await.unwrap() });
+        let request = pb::AgentRunRequest {
+            mcp_tools: Some(pb::McpTools {
+                mcp_tools: vec![pb::McpToolDefinition {
+                    name: "cursor-computer-use-computer_drag".into(),
+                    provider_identifier: "cursor-computer-use".into(),
+                    tool_name: "computer_drag".into(),
+                    description: "drag along a path".into(),
+                    input_schema_json: Some(json!({
+                        "type": "object",
+                        "properties": {"path": {"type": "array", "minItems": 2.0, "items": {"type": "number"}}}
+                    }).to_string()),
+                    ..Default::default()
+                }],
+            }),
+            ..Default::default()
+        };
+        let tools = dynamic_mcp(&request, &pb::RequestContext::default())
+            .unwrap()
+            .into_values()
+            .map(|(_, definition)| definition)
+            .collect::<Vec<_>>();
+        let model = ModelSpec::new("grok-4.7-fixture");
+        let prompt = PromptCompiler::new(PromptAssets::embedded().unwrap())
+            .prompt_spec(Mode::Agent, &model, &tools, false)
+            .unwrap();
+        let provider = OpenAiResponsesProvider::new(
+            reqwest::Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            ProviderConfig {
+                kind: ProviderKind::OpenAiResponses,
+                request_url: format!("http://{address}/v1/responses"),
+                api_key: "fixture-key".into(),
+                custom_headers: Default::default(),
+                max_output_tokens: Some(16),
+                request_timeout: Duration::from_secs(5),
+                allowed_body_fields: None,
+            },
+        );
+        let mut stream = provider.stream(
+            ModelInvocation {
+                call_id: "schema-fixture-call".into(),
+                run_id: "schema-fixture-run".into(),
+                conversation_id: "schema-fixture-conversation".into(),
+                provider_call_index: 0,
+                request: ModelRequest {
+                    prompt,
+                    model,
+                    history: project_messages(&[CanonicalMessage::text(
+                        "schema-user",
+                        Role::User,
+                        Origin::User,
+                        "hello",
+                    )])
+                    .unwrap(),
+                },
+            },
+            CancellationToken::new(),
+        );
+        let mut text = String::new();
+        let mut completed = false;
+        while let Some(event) = stream.next().await {
+            match event.expect("strict Responses upstream must accept integer schema constraints") {
+                ModelEvent::TextDelta(delta) => text.push_str(&delta),
+                ModelEvent::Done(FinishReason::Stop) => completed = true,
+                _ => {}
+            }
+        }
+        assert_eq!(text, "ok");
+        assert!(completed);
     }
 
     #[test]
