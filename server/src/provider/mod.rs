@@ -55,10 +55,10 @@ fn map_sse_error(
     match error {
         eventsource_stream::EventStreamError::Transport(error) => error,
         eventsource_stream::EventStreamError::Utf8(error) => {
-            crate::Error::Provider(format!("{label} SSE UTF-8 error: {error}"))
+            crate::Error::provider(format!("{label} SSE UTF-8 error: {error}"))
         }
         eventsource_stream::EventStreamError::Parser(error) => {
-            crate::Error::Provider(format!("{label} SSE parse error: {error}"))
+            crate::Error::provider(format!("{label} SSE parse error: {error}"))
         }
     }
 }
@@ -91,7 +91,9 @@ fn provider_event_error(label: &str, value: &serde_json::Value) -> Option<crate:
         })
         .unwrap_or("provider returned an error event without a message");
 
-    Some(crate::Error::Provider(format!("{label} error: {message}")))
+    Some(crate::Error::Provider(crate::ProviderFailure::event(
+        label, message, value,
+    )))
 }
 
 fn merge_extra_params(body: &mut serde_json::Value, extra: &serde_json::Value) -> Result<()> {
@@ -100,7 +102,7 @@ fn merge_extra_params(body: &mut serde_json::Value, extra: &serde_json::Value) -
         .ok_or_else(|| crate::Error::Config("model extra params must be an object".into()))?;
     let body = body
         .as_object_mut()
-        .ok_or_else(|| crate::Error::Provider("provider request body must be an object".into()))?;
+        .ok_or_else(|| crate::Error::provider("provider request body must be an object".into()))?;
     for (name, value) in extra {
         if matches!(
             name.as_str(),
@@ -130,7 +132,7 @@ fn apply_body_allowlist(
         return Ok(());
     };
     body.as_object_mut()
-        .ok_or_else(|| crate::Error::Provider("provider request body must be an object".into()))?
+        .ok_or_else(|| crate::Error::provider("provider request body must be an object".into()))?
         .retain(|name, _| allowed.contains(name));
     Ok(())
 }
@@ -140,7 +142,7 @@ fn apply_openai_prompt_cache_key(body: &mut serde_json::Value, model_id: &str) -
         return Ok(());
     }
     body.as_object_mut()
-        .ok_or_else(|| crate::Error::Provider("provider request body must be an object".into()))?
+        .ok_or_else(|| crate::Error::provider("provider request body must be an object".into()))?
         .insert(
             "prompt_cache_key".into(),
             serde_json::Value::String("cursor-byok".into()),
@@ -156,15 +158,15 @@ mod tests {
     fn sse_transport_errors_are_not_relabelled_as_parse_errors() {
         let error = map_sse_error(
             "test provider",
-            eventsource_stream::EventStreamError::Transport(crate::Error::Provider(
+            eventsource_stream::EventStreamError::Transport(crate::Error::provider(
                 "connection closed".into(),
             )),
         );
 
-        let crate::Error::Provider(message) = error else {
+        let crate::Error::Provider(failure) = error else {
             panic!("transport error category must be preserved");
         };
-        assert_eq!(message, "connection closed");
+        assert_eq!(failure.message, "connection closed");
     }
 
     #[test]
@@ -212,9 +214,9 @@ mod tests {
     }
 
     fn assert_provider_error(label: &str, value: serde_json::Value, expected: &str) {
-        let Some(crate::Error::Provider(message)) = provider_event_error(label, &value) else {
+        let Some(crate::Error::Provider(failure)) = provider_event_error(label, &value) else {
             panic!("expected provider error");
         };
-        assert_eq!(message, expected);
+        assert_eq!(failure.message, expected);
     }
 }

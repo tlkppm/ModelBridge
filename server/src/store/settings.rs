@@ -14,6 +14,7 @@ const COMMIT_SETTINGS_KEY: &str = "commit_settings";
 const CURSOR_TAKEOVER_ENABLED_KEY: &str = "cursor_takeover_enabled";
 const PRICING_SETTINGS_KEY: &str = "token_pricing";
 const EXTERNAL_API_SETTINGS_KEY: &str = "external_api";
+const IMAGE_GENERATION_SETTINGS_KEY: &str = "image_generation";
 
 /// Embedded default system prompts for commit message generation.
 pub const DEFAULT_COMMIT_PROMPT_ZH_CN: &str = include_str!("../../prompt/cursor/commit/zh-CN.md");
@@ -31,6 +32,86 @@ pub struct PortSettings {
 pub struct ExternalApiSettings {
     pub enabled: bool,
     pub api_key: String,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageGenerationMode {
+    #[default]
+    Existing,
+    Independent,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImageGenerationKeyAction {
+    #[default]
+    Keep,
+    Replace,
+    Clear,
+}
+
+#[derive(Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct ImageGenerationSettings {
+    #[serde(default = "image_generation_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: ImageGenerationMode,
+    #[serde(default)]
+    pub connection_model_hash: String,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub use_full_url: bool,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub image_model: String,
+}
+
+#[derive(Deserialize)]
+pub struct ImageGenerationSettingsInput {
+    pub enabled: bool,
+    pub mode: ImageGenerationMode,
+    #[serde(default)]
+    pub connection_model_hash: String,
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub use_full_url: bool,
+    #[serde(default)]
+    pub image_model: String,
+    #[serde(default)]
+    pub key_action: ImageGenerationKeyAction,
+    pub api_key: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ImageGenerationSettingsView {
+    pub enabled: bool,
+    pub mode: ImageGenerationMode,
+    pub connection_model_hash: String,
+    pub base_url: String,
+    pub use_full_url: bool,
+    pub image_model: String,
+    pub has_api_key: bool,
+    pub configured: bool,
+    pub configuration_error: Option<String>,
+    pub endpoint_url: Option<String>,
+}
+
+fn image_generation_enabled() -> bool {
+    true
+}
+
+impl ImageGenerationSettings {
+    pub fn is_configured(&self) -> bool {
+        self.enabled
+            && match self.mode {
+                ImageGenerationMode::Existing => !self.connection_model_hash.trim().is_empty(),
+                ImageGenerationMode::Independent => !self.base_url.trim().is_empty(),
+            }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -249,6 +330,35 @@ impl Store {
             .bind(now_ms())
             .execute(&self.pool)
             .await?;
+        Ok(settings)
+    }
+
+    pub async fn image_generation_settings(&self) -> Result<ImageGenerationSettings> {
+        let value = sqlx::query_scalar::<_, String>(
+            "SELECT value_json FROM service_settings WHERE setting_key = ?",
+        )
+        .bind(IMAGE_GENERATION_SETTINGS_KEY)
+        .fetch_optional(&self.pool)
+        .await?;
+        value
+            .map(|value| serde_json::from_str(&value).map_err(Into::into))
+            .unwrap_or_else(|| Ok(ImageGenerationSettings::default()))
+    }
+
+    pub async fn set_image_generation_settings(
+        &self,
+        settings: ImageGenerationSettings,
+    ) -> Result<ImageGenerationSettings> {
+        let value_json = serde_json::to_string(&settings)?;
+        let _write = self.writes.lock().await;
+        sqlx::query(
+            "INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms",
+        )
+        .bind(IMAGE_GENERATION_SETTINGS_KEY)
+        .bind(value_json)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
         Ok(settings)
     }
 

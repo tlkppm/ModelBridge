@@ -375,8 +375,7 @@ fn failure(
 ) -> Box<ModelCycleFailure> {
     let retryable = match &failure {
         RunFailure::Protocol(_) => true,
-        RunFailure::Provider(message) if is_rejected_request(message) => false,
-        RunFailure::Provider(_) => true,
+        RunFailure::Provider(failure) => failure.retryable,
         RunFailure::Store(_) | RunFailure::Client(_) => false,
     };
     Box::new(ModelCycleFailure {
@@ -385,21 +384,6 @@ fn failure(
         partial_reasoning,
         usage,
         retryable,
-    })
-}
-
-/// A rejected request (wrong key, unknown model, malformed or oversized body)
-/// fails identically every time, so retrying it only delays the error the user
-/// needs to see. Provider failures are formatted as `<label> <status>: <body>`,
-/// so only the head before the body is inspected. 408 and 425 are timing
-/// failures and stay retryable.
-fn is_rejected_request(message: &str) -> bool {
-    let head = message.split_once(": ").map_or(message, |(head, _)| head);
-    head.split_whitespace().any(|token| {
-        token.len() == 3
-            && token.starts_with('4')
-            && token.bytes().all(|byte| byte.is_ascii_digit())
-            && !matches!(token, "408" | "425" | "429")
     })
 }
 
@@ -504,14 +488,14 @@ mod tests {
     #[test]
     fn other_provider_errors_are_retryable() {
         let result = failure(
-            RunFailure::Provider("Anthropic 502 Bad Gateway".into()),
+            RunFailure::Provider(crate::ProviderFailure::http("Anthropic", 502, "down")),
             String::new(),
             String::new(),
             None,
         );
         assert!(result.retryable);
         let timeout = failure(
-            RunFailure::Provider("Anthropic 408 Request Timeout".into()),
+            RunFailure::Provider(crate::ProviderFailure::http("Anthropic", 408, "timeout")),
             String::new(),
             String::new(),
             None,
@@ -521,34 +505,49 @@ mod tests {
 
     #[test]
     fn rejected_requests_are_not_retryable() {
-        // Verbatim from a wedged conversation: eight retries of the same
-        // over-limit prompt only delayed the error by forty seconds.
         let too_long = failure(
-            RunFailure::Provider(
-                "Anthropic 400 Bad Request: {\"type\":\"error\",\"error\":{\"type\":\
-                 \"invalid_request_error\",\"message\":\"prompt is too long: 1002148 \
-                 tokens > 1000000 maximum\"}}"
-                    .into(),
-            ),
+            RunFailure::Provider(crate::ProviderFailure::http(
+                "Anthropic",
+                400,
+                "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long\"}}",
+            )),
             String::new(),
             String::new(),
             None,
         );
         assert!(!too_long.retryable);
         let unauthorized = failure(
-            RunFailure::Provider("OpenAI Chat 401 Unauthorized: invalid api key".into()),
+            RunFailure::Provider(crate::ProviderFailure::http(
+                "OpenAI Chat",
+                401,
+                "invalid api key",
+            )),
             String::new(),
             String::new(),
             None,
         );
         assert!(!unauthorized.retryable);
-        // A status-looking number inside the body is not a status code.
         let body_number = failure(
-            RunFailure::Provider("Anthropic 502 Bad Gateway: upstream returned 400".into()),
+            RunFailure::Provider(crate::ProviderFailure::http(
+                "Anthropic",
+                502,
+                "upstream returned 400",
+            )),
             String::new(),
             String::new(),
             None,
         );
         assert!(body_number.retryable);
+        let image = failure(
+            RunFailure::Provider(crate::ProviderFailure::event(
+                "OpenAI Responses",
+                "Complexity 'xhigh' is not supported for this image model.",
+                &serde_json::json!({"type":"error","error":{"type":"image_generation_user_error","code":"invalid_value","param":"complexity"}}),
+            )),
+            String::new(),
+            String::new(),
+            None,
+        );
+        assert!(!image.retryable);
     }
 }

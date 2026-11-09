@@ -181,7 +181,7 @@ impl NativeForwarder {
                         recorder.usage(usage).await?;
                     }
                     if let Some(message) = summary.failure {
-                        recorder.failed(&Error::Provider(message)).await?;
+                        recorder.failed(&Error::provider(message)).await?;
                     } else {
                         recorder
                             .completed(summary.finish.unwrap_or(FinishReason::Stop))
@@ -192,7 +192,7 @@ impl NativeForwarder {
                 }
             } else {
                 recorder
-                    .failed(&Error::Provider(format!("upstream returned {status}")))
+                    .failed(&Error::provider(format!("upstream returned {status}")))
                     .await?;
             }
             Ok(build_response(status, &headers, Body::from(bytes)))
@@ -224,7 +224,7 @@ impl NativeForwarder {
                         Err::<Bytes, Error>(error)?
                     }
                     Err(_) => {
-                        let error = Error::Provider("native upstream stream idle timeout".into());
+                        let error = Error::provider("native upstream stream idle timeout".into());
                         recorder.failed(&error).await?;
                         Err::<Bytes, Error>(error)?
                     }
@@ -237,7 +237,7 @@ impl NativeForwarder {
             if let Ok(summary) = observer.await {
                 if let Some(usage) = summary.usage { recorder.usage(usage).await?; }
                 if let Some(message) = summary.failure {
-                    recorder.failed(&Error::Provider(message)).await?;
+                    recorder.failed(&Error::provider(message)).await?;
                 } else {
                     recorder.completed(summary.finish.unwrap_or(FinishReason::Stop)).await?;
                 }

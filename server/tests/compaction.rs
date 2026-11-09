@@ -512,7 +512,7 @@ async fn provider_overflow_refusal_compacts_and_retries_once() {
         .unwrap();
     let provider = fake_provider::FakeProvider::default();
     provider.push(text_response("first answer", 4_000, 12));
-    provider.push_error(cursor_server::Error::Provider(
+    provider.push_error(cursor_server::Error::provider(
         "Anthropic 400 Bad Request: {\"type\":\"error\",\"error\":{\"type\":\
          \"invalid_request_error\",\"message\":\"prompt is too long: 1002148 tokens > \
          1000000 maximum\"}}"

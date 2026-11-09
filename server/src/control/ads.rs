@@ -175,7 +175,7 @@ async fn cache_image(client: &reqwest::Client, cache_dir: &FilePath, url: &str) 
         .send()
         .await?;
     if !response.status().is_success() {
-        return Err(Error::Provider(format!(
+        return Err(Error::provider(format!(
             "advertisement image download failed ({})",
             response.status()
         )));
@@ -186,13 +186,13 @@ async fn cache_image(client: &reqwest::Client, cache_dir: &FilePath, url: &str) 
         .and_then(|value| value.to_str().ok())
         .and_then(image_extension)
         .ok_or_else(|| {
-            Error::Provider("advertisement image has an unsupported content type".into())
+            Error::provider("advertisement image has an unsupported content type".into())
         })?;
     if response
         .content_length()
         .is_some_and(|length| length > MAX_AD_IMAGE_BYTES as u64)
     {
-        return Err(Error::Provider("advertisement image exceeds 10 MiB".into()));
+        return Err(Error::provider("advertisement image exceeds 10 MiB".into()));
     }
 
     let mut bytes = BytesMut::new();
@@ -200,7 +200,7 @@ async fn cache_image(client: &reqwest::Client, cache_dir: &FilePath, url: &str) 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
         if bytes.len() + chunk.len() > MAX_AD_IMAGE_BYTES {
-            return Err(Error::Provider("advertisement image exceeds 10 MiB".into()));
+            return Err(Error::provider("advertisement image exceeds 10 MiB".into()));
         }
         bytes.extend_from_slice(&chunk);
     }
@@ -252,9 +252,9 @@ fn image_extension(content_type: &str) -> Option<&'static str> {
 
 fn validate_http_url(value: &str, field: &str) -> Result<()> {
     let url = Url::parse(value)
-        .map_err(|error| Error::Provider(format!("advertisement {field} is invalid: {error}")))?;
+        .map_err(|error| Error::provider(format!("advertisement {field} is invalid: {error}")))?;
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-        return Err(Error::Provider(format!(
+        return Err(Error::provider(format!(
             "advertisement {field} must be an absolute HTTP or HTTPS URL"
         )));
     }

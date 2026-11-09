@@ -172,7 +172,7 @@ pub(super) async fn complete(
         output.update(&event?);
     }
     if output.finish.is_none() {
-        return Err(Error::Provider(
+        return Err(Error::provider(
             "model stream ended without completion".into(),
         ));
     }

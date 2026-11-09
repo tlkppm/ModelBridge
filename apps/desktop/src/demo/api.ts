@@ -2,6 +2,8 @@ import type {
   CallDetail,
   CursorHarnessStatus,
   ExternalApiSettings,
+  ImageGenerationSettingsInput,
+  ImageGenerationSettingsView,
   LlmCall,
   Model,
   Overview,
@@ -88,6 +90,18 @@ let harnessStatus: CursorHarnessStatus = {
 let detailed = true;
 let portSettings = { proxy_port: 0, service_port: 0 };
 let externalApiSettings: ExternalApiSettings = { enabled: false, api_key: "" };
+let imageGenerationSettings: ImageGenerationSettingsView = {
+  enabled: false,
+  mode: "existing",
+  connection_model_hash: "",
+  base_url: "",
+  use_full_url: false,
+  image_model: "",
+  has_api_key: false,
+  configured: false,
+  configuration_error: null,
+  endpoint_url: null,
+};
 let proxySettings: ProxySettings = {
   mode: "default",
   address: "",
@@ -157,6 +171,34 @@ export function installDemoApi() {
       externalApiSettings = body as ExternalApiSettings;
       return json(externalApiSettings);
     }
+    if (path === "/settings/image-generation" && method === "GET") return json(imageGenerationView(imageGenerationSettings));
+    if ((path === "/settings/image-generation" && method === "PUT")
+      || (path === "/settings/image-generation/models" && method === "POST")) {
+      try {
+        const input = imageGenerationInput(body);
+        const next = imageGenerationView({
+          enabled: input.enabled,
+          mode: input.mode,
+          connection_model_hash: input.connection_model_hash,
+          base_url: input.base_url,
+          use_full_url: input.use_full_url,
+          image_model: input.image_model,
+          has_api_key: input.key_action === "replace" ? true : input.key_action === "clear" ? false : imageGenerationSettings.has_api_key,
+          configured: false,
+          configuration_error: null,
+          endpoint_url: null,
+        });
+        if (path.endsWith("/models")) {
+          if (next.configuration_error) return json({ message: next.configuration_error }, 400);
+          return json({ models: ["demo-image-model", "demo-image-model-hd"] });
+        }
+        if (next.enabled && next.configuration_error) return json({ message: next.configuration_error }, 400);
+        imageGenerationSettings = next;
+        return json(next);
+      } catch (cause) {
+        return json({ message: cause instanceof Error ? cause.message : String(cause) }, 400);
+      }
+    }
     if (path === "/settings/storage/statistics" && method === "GET") return json(storage);
     if (path === "/settings/storage/statistics") {
       const scope = (body as { scope?: string } | null)?.scope ?? "details";
@@ -188,6 +230,84 @@ export function installDemoApi() {
 
     return json({ message: `Unhandled demo endpoint: ${method} ${path}` }, 404);
   };
+}
+
+function imageGenerationInput(body: unknown): ImageGenerationSettingsInput {
+  if (!body || typeof body !== "object") throw new Error(t("图片生成配置格式无效。"));
+  const input = body as Partial<ImageGenerationSettingsInput>;
+  if (typeof input.enabled !== "boolean" || (input.mode !== "existing" && input.mode !== "independent")
+    || typeof input.connection_model_hash !== "string" || typeof input.base_url !== "string"
+    || typeof input.use_full_url !== "boolean" || typeof input.image_model !== "string") {
+    throw new Error(t("图片生成配置格式无效。"));
+  }
+  const keyAction = input.mode === "existing" ? "keep" : input.key_action ?? "keep";
+  if (keyAction !== "keep" && keyAction !== "replace" && keyAction !== "clear") {
+    throw new Error(t("密钥操作无效。"));
+  }
+  if (keyAction === "replace" && (typeof input.api_key !== "string" || !input.api_key.trim())) {
+    throw new Error(t("替换密钥时请输入非空 API 密钥。"));
+  }
+  if (input.mode === "independent" && imageGenerationSettings.has_api_key && keyAction === "keep"
+    && input.base_url.trim() !== imageGenerationSettings.base_url.trim()) {
+    const previous = imageGenerationSettings.base_url.trim();
+    if (previous && imageApiUrl(previous).origin !== imageApiUrl(input.base_url).origin) {
+      throw new Error(t("独立地址已跨源变更，必须替换密钥或显式清空，不能保留旧密钥。"));
+    }
+  }
+  return {
+    enabled: input.enabled,
+    mode: input.mode,
+    connection_model_hash: input.connection_model_hash.trim(),
+    base_url: input.mode === "existing" ? imageGenerationSettings.base_url : input.base_url.trim(),
+    use_full_url: input.mode === "existing" ? imageGenerationSettings.use_full_url : input.use_full_url,
+    image_model: input.image_model.trim(),
+    key_action: keyAction,
+  };
+}
+
+function imageApiUrl(value: string) {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error(t("图片生成地址必须是有效的 HTTP 或 HTTPS URL。"));
+  }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password || url.hash) {
+    throw new Error(t("图片生成地址必须是有效的 HTTP 或 HTTPS URL。"));
+  }
+  return url;
+}
+
+function imageGenerationView(settings: ImageGenerationSettingsView): ImageGenerationSettingsView {
+  try {
+    const connection = settings.mode === "existing"
+      ? models.find((model) => model.model_hash === settings.connection_model_hash && model.type === "openai")
+      : null;
+    if (settings.mode === "existing" && !connection) {
+      throw new Error(t("所选连接已失效或不是 OpenAI 兼容内置连接，请重新选择。"));
+    }
+    const url = imageApiUrl(connection ? connection.base_url : settings.base_url);
+    const fullUrl = connection ? connection.use_full_url : settings.use_full_url;
+    const path = url.pathname.replace(/\/+$/, "");
+    if (!fullUrl) {
+      url.pathname = `${path}${/\/v\d+$/.test(path) ? "" : "/v1"}/images/generations`;
+    } else if (connection) {
+      if (/\/(?:responses|chat\/completions)$/.test(path)) {
+        url.pathname = path.replace(/\/(?:responses|chat\/completions)$/, "/images/generations");
+      } else if (!path.endsWith("/images/generations")) {
+        throw new Error(t("已有连接的完整路径无法用于生图，请改用独立完整地址。"));
+      }
+    }
+    url.search = "";
+    return { ...settings, configured: true, configuration_error: null, endpoint_url: url.toString() };
+  } catch (cause) {
+    return {
+      ...settings,
+      configured: false,
+      configuration_error: cause instanceof Error ? cause.message : String(cause),
+      endpoint_url: null,
+    };
+  }
 }
 
 function createModel({ hash, order, name, type, url, modelId, endpoint = "/v1/responses" }: {

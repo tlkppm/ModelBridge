@@ -50,6 +50,26 @@ pub async fn update_external_api(
     Ok(Json(service.set_external_api_settings(settings).await?))
 }
 
+pub async fn get_image_generation(
+    State(service): State<ControlService>,
+) -> Result<Json<crate::store::ImageGenerationSettingsView>> {
+    Ok(Json(service.image_generation_settings().await?))
+}
+
+pub async fn update_image_generation(
+    State(service): State<ControlService>,
+    Json(settings): Json<crate::store::ImageGenerationSettingsInput>,
+) -> Result<Json<crate::store::ImageGenerationSettingsView>> {
+    Ok(Json(service.set_image_generation_settings(settings).await?))
+}
+
+pub async fn discover_image_models(
+    State(service): State<ControlService>,
+    Json(settings): Json<crate::store::ImageGenerationSettingsInput>,
+) -> Result<Json<super::DiscoveredModels>> {
+    Ok(Json(service.discover_image_models(settings).await?))
+}
+
 pub async fn get_storage(State(service): State<ControlService>) -> Result<Json<StatisticsStorage>> {
     Ok(Json(service.statistics_storage().await?))
 }

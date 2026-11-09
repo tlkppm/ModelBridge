@@ -614,7 +614,7 @@ async fn exec_ids_are_monotonic_and_released_ids_are_not_reused() {
     assert_eq!(second, 2, "released Exec ids must not be reused in one Run");
 
     let interaction = pending
-        .reserve_interaction(&call("call-3", "AskQuestion"))
+        .reserve_interaction(&call("call-3", "AskQuestion"), "")
         .await
         .unwrap();
     assert_eq!(

@@ -393,8 +393,8 @@ impl RunEngine {
                         // same prompt and gets the same refusal.
                         if !overflow_compacted
                             && prepared.action != RunAction::Compact
-                            && matches!(&cycle_failure.failure, RunFailure::Provider(message)
-                                if super::compaction::is_context_overflow(message))
+                            && matches!(&cycle_failure.failure, RunFailure::Provider(failure)
+                                if super::compaction::is_context_overflow(&failure.message))
                         {
                             tracing::warn!(
                                 provider_call_index,
@@ -1059,8 +1059,8 @@ pub(super) fn client_failure() -> RunOutcome {
 fn failure_message(failure: &RunFailure) -> String {
     match failure {
         RunFailure::Protocol(message)
-        | RunFailure::Provider(message)
         | RunFailure::Store(message)
         | RunFailure::Client(message) => message.clone(),
+        RunFailure::Provider(failure) => failure.message.clone(),
     }
 }

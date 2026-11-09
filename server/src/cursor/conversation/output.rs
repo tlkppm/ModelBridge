@@ -802,6 +802,10 @@ impl ConversationOutput {
             let blob_id = self.store.put_blob(&image.data, &[]).await?;
             completion.persist_read_image(&blob_id, &image)?;
         }
+        if let Some(image) = completion.take_generated_image() {
+            let blob_id = self.store.put_blob(&image.data, &[]).await?;
+            completion.persist_generated_image(&blob_id, &image)?;
+        }
         let result = completion.result();
         if result.call_id.is_empty() {
             return Err(Error::Protocol("tool result call_id is empty".into()));
@@ -999,7 +1003,7 @@ enum Input {
 fn cursor_error(failure: RunFailure) -> Error {
     match failure {
         RunFailure::Protocol(message) => Error::Protocol(message),
-        RunFailure::Provider(message) => Error::Provider(message),
+        RunFailure::Provider(failure) => Error::Provider(failure),
         RunFailure::Store(message) => Error::Store(message),
         RunFailure::Client(message) => Error::Protocol(message),
     }
@@ -1045,7 +1049,33 @@ pub(crate) fn finish_failed(handle: &TransportHandle, error: &Error) -> Result<(
         details: Vec::new(),
     };
     let stream_error = match error {
-        Error::Provider(_) | Error::Http(_) => {
+        Error::Provider(failure) => {
+            let detail = ai::ErrorDetails {
+                error: ai::error_details::Error::ProviderError as i32,
+                details: Some(ai::CustomErrorDetails {
+                    title: "Provider Error".into(),
+                    detail: error.to_string(),
+                    allow_command_links_potentially_unsafe_please_only_use_for_handwritten_trusted_markdown: Some(true),
+                    is_retryable: Some(failure.retryable),
+                    show_request_id: Some(true),
+                    should_show_immediate_error: Some(false),
+                }),
+                is_expected: Some(true),
+            };
+            ConnectStreamError {
+                code: if failure.retryable {
+                    ConnectCode::Unavailable
+                } else {
+                    ConnectCode::InvalidArgument
+                },
+                message: error.to_string(),
+                details: vec![ConnectErrorDetail {
+                    type_name: "aiserver.v1.ErrorDetails".into(),
+                    value: STANDARD_NO_PAD.encode(detail.encode_to_vec()),
+                }],
+            }
+        }
+        Error::Http(_) => {
             let detail = ai::ErrorDetails {
                 error: ai::error_details::Error::ProviderError as i32,
                 details: Some(ai::CustomErrorDetails {

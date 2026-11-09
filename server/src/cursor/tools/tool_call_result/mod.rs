@@ -7,6 +7,7 @@ mod mcp;
 mod mcp_state;
 mod search;
 
+use base64::Engine;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -20,7 +21,9 @@ use crate::{
 use super::runtime::now_ms;
 
 pub(crate) use exec::{edit_failure, from_exec};
-pub(crate) use interaction::{complete_web_fetch, complete_web_search, from_interaction};
+pub(crate) use interaction::{
+    complete_generate_image, complete_web_fetch, complete_web_search, from_interaction,
+};
 pub(crate) use local::{local, subagents_disabled, todo_items};
 pub(crate) use mcp::failure as mcp_failure;
 pub(crate) use search::complete as semble;
@@ -30,6 +33,7 @@ pub struct ToolCompletion {
     result: ToolResult,
     tool_call: pb::ToolCall,
     read_image: Option<ReadImage>,
+    generated_image: Option<ReadImage>,
 }
 
 #[derive(Clone, Debug)]
@@ -113,7 +117,50 @@ impl ToolCompletion {
                 hook_additional_contexts: Vec::new(),
             },
             read_image: None,
+            generated_image: None,
         }
+    }
+
+    pub(crate) fn with_generated_image(mut self, image: ReadImage) -> Self {
+        self.generated_image = Some(image);
+        self
+    }
+
+    pub(crate) fn take_generated_image(&mut self) -> Option<ReadImage> {
+        self.generated_image.take()
+    }
+
+    pub(crate) fn persist_generated_image(
+        &mut self,
+        blob_id: &BlobId,
+        image: &ReadImage,
+    ) -> Result<()> {
+        self.result.content = "Generated image.".into();
+        self.result.image = Some(ToolImageReference {
+            blob_id: blob_id.to_base64(),
+            mime_type: image.mime_type.clone(),
+            path: String::new(),
+        });
+        let Some(pb::tool_call::Tool::GenerateImageToolCall(call)) = self.tool_call.tool.as_mut()
+        else {
+            return Err(Error::Protocol(
+                "generated image completion has no GenerateImage state".into(),
+            ));
+        };
+        let data_url = format!(
+            "data:{};base64,{}",
+            image.mime_type,
+            base64::engine::general_purpose::STANDARD.encode(&image.data)
+        );
+        call.result = Some(pb::GenerateImageResult {
+            result: Some(pb::generate_image_result::Result::Success(
+                pb::GenerateImageSuccess {
+                    file_path: String::new(),
+                    image_data: data_url,
+                },
+            )),
+        });
+        Ok(())
     }
 
     pub(super) fn from_rendered(

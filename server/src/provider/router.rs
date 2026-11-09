@@ -78,7 +78,7 @@ impl Provider for ProviderRouter {
                     (recorder, guard, provider.stream(routed, cancellation.clone()))
                 } else {
                     let mut routed = invocation.clone();
-                    let model = store.model(&selected).await?.ok_or_else(|| Error::Provider(format!("unknown model: {selected}")))?;
+                    let model = store.model(&selected).await?.ok_or_else(|| Error::provider(format!("unknown model: {selected}")))?;
                     let provider_type = model.provider_type();
                     let request_url = model.request_url()?;
                     model.configure(&mut routed.request.model);
@@ -233,7 +233,7 @@ async fn finish_stream(recorder: &CallRecorder, cancellation: &CancellationToken
     if cancellation.is_cancelled() {
         recorder.cancelled().await
     } else {
-        let error = Error::Provider("provider stream ended without Done".into());
+        let error = Error::provider("provider stream ended without Done".into());
         recorder.failed(&error).await?;
         Err(error)
     }
@@ -274,7 +274,7 @@ async fn next_provider_event(
 }
 
 fn stream_idle_timeout_error(idle_timeout: Duration) -> Error {
-    Error::Provider(format!(
+    Error::provider(format!(
         "provider stream idle timeout: no events received for {} seconds ({} minutes)",
         idle_timeout.as_secs(),
         idle_timeout.as_secs() / 60
@@ -282,7 +282,7 @@ fn stream_idle_timeout_error(idle_timeout: Duration) -> Error {
 }
 
 fn request_timeout_error(request_timeout: Duration) -> Error {
-    Error::Provider(format!(
+    Error::provider(format!(
         "provider request timed out after {} seconds ({} minutes)",
         request_timeout.as_secs(),
         request_timeout.as_secs() / 60
@@ -292,7 +292,7 @@ fn request_timeout_error(request_timeout: Duration) -> Error {
 fn normalize_provider_stream_error(error: Error, request_timeout: Duration) -> Error {
     match error {
         Error::Http(source) if source.is_timeout() => request_timeout_error(request_timeout),
-        Error::Http(source) if source.is_body() => Error::Provider(format!(
+        Error::Http(source) if source.is_body() => Error::provider(format!(
             "provider stream transport failed while reading the response body: {}",
             root_error_message(&source)
         )),
@@ -406,7 +406,7 @@ mod tests {
             panic!("idle timeout must be a provider error");
         };
         assert_eq!(
-            idle,
+            idle.message,
             "provider stream idle timeout: no events received for 1800 seconds (30 minutes)"
         );
 
@@ -414,7 +414,7 @@ mod tests {
             panic!("request timeout must be a provider error");
         };
         assert_eq!(
-            request,
+            request.message,
             "provider request timed out after 3600 seconds (60 minutes)"
         );
     }

@@ -255,6 +255,7 @@ impl ToolDispatcher {
             &self.results,
             &self.search,
             &self.fetch,
+            self.store.clone(),
             pending,
             response,
         )

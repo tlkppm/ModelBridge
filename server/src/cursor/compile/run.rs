@@ -156,6 +156,9 @@ pub(crate) async fn prepare(
     if let Some(configured_model) = store.model(&model.model_id).await? {
         configured_model.configure(&mut model);
     }
+    if crate::cursor::services::images::is_available(store).await? {
+        model.supports_image_generation = true;
+    }
     let dynamic = context::dynamic_mcp(request, &request_context)?;
     let subagent_model_overrides = model::overrides(request)?;
     let subagents_disabled = subagent_model_overrides

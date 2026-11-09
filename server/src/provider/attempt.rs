@@ -38,9 +38,10 @@ where
         _ = cancellation.cancelled() => return Ok(Attempt::Cancelled),
         bytes = response.bytes() => bytes,
     }?;
-    Err(Error::Provider(format!(
-        "{label} {status}: {}",
-        String::from_utf8_lossy(&bytes)
+    Err(Error::Provider(crate::ProviderFailure::http(
+        label,
+        status.as_u16(),
+        &String::from_utf8_lossy(&bytes),
     )))
 }
 
@@ -70,7 +71,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, Error::Provider(message) if message.contains("503") && message.contains("down"))
+            matches!(error, Error::Provider(failure) if failure.message.contains("503") && failure.message.contains("down"))
         );
     }
 

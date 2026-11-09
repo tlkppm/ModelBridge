@@ -16,4 +16,4 @@ pub mod store;
 
 pub use app::App;
 pub use config::Config;
-pub use error::{Error, Result};
+pub use error::{Error, ProviderFailure, Result};

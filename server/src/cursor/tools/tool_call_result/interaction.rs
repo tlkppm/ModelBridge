@@ -110,7 +110,7 @@ pub(crate) fn from_interaction(
                 (rejected.reason.clone(), true)
             }
             pb::generate_image_request_response::Result::Approved(_) => {
-                return Err(Error::Provider(
+                return Err(Error::provider(
                     "GenerateImage requires a configured server-side image executor".into(),
                 ));
             }
@@ -214,6 +214,56 @@ pub(crate) fn complete_web_search(
         }
     };
     ToolCompletion::from_rendered(call, pending.started_at_ms, output, is_error, rendered)
+}
+
+pub(crate) fn complete_generate_image(
+    pending: PendingInteraction,
+    outcome: std::result::Result<crate::cursor::services::images::GeneratedImage, String>,
+) -> Result<ToolCompletion> {
+    let call = &pending.call;
+    let mut rendered = interaction::render_tool_call(call, false)?;
+    let Some(pb::tool_call::Tool::GenerateImageToolCall(tool)) = rendered.tool.as_mut() else {
+        return Err(Error::Protocol(format!(
+            "tool {} is not GenerateImage",
+            call.name
+        )));
+    };
+    match outcome {
+        Ok(image) => {
+            let bytes = image.bytes.clone();
+            let mime_type = image.mime_type.clone();
+            tool.result = Some(pb::GenerateImageResult {
+                result: Some(pb::generate_image_result::Result::Success(
+                    pb::GenerateImageSuccess {
+                        file_path: String::new(),
+                        image_data: String::new(),
+                    },
+                )),
+            });
+            Ok(ToolCompletion::from_rendered(
+                call,
+                pending.started_at_ms,
+                "Generated image.".into(),
+                false,
+                rendered,
+            )?
+            .with_generated_image(super::ReadImage {
+                data: bytes,
+                mime_type,
+                path: String::new(),
+            }))
+        }
+        Err(error) => {
+            tool.result = Some(pb::GenerateImageResult {
+                result: Some(pb::generate_image_result::Result::Error(
+                    pb::GenerateImageError {
+                        error: error.clone(),
+                    },
+                )),
+            });
+            ToolCompletion::from_rendered(call, pending.started_at_ms, error, true, rendered)
+        }
+    }
 }
 
 pub(crate) fn complete_web_fetch(
@@ -409,6 +459,7 @@ mod tests {
                 argument_error: None,
             },
             started_at_ms: 1,
+            conversation_id: String::new(),
         }
     }
 }

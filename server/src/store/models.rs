@@ -162,6 +162,16 @@ impl Store {
         if result.rows_affected() != 1 {
             return Err(Error::RunNotFound(format!("model {current_hash}")));
         }
+        if next_hash != current.model_hash {
+            sqlx::query(
+                "UPDATE service_settings SET value_json = json_set(value_json, '$.connection_model_hash', ?), updated_at_ms = ? WHERE setting_key = 'image_generation' AND json_extract(value_json, '$.connection_model_hash') = ?",
+            )
+            .bind(&next_hash)
+            .bind(now)
+            .bind(&current.model_hash)
+            .execute(&mut *transaction)
+            .await?;
+        }
         transaction.commit().await?;
         Ok(self
             .model(&next_hash)

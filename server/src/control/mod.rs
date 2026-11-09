@@ -201,6 +201,14 @@ pub fn api_router(service: ControlService) -> Router {
             get(settings::get_external_api).put(settings::update_external_api),
         )
         .route(
+            "/__byok-api__/api/settings/image-generation",
+            get(settings::get_image_generation).put(settings::update_image_generation),
+        )
+        .route(
+            "/__byok-api__/api/settings/image-generation/models",
+            post(settings::discover_image_models),
+        )
+        .route(
             "/__byok-api__/api/settings/storage/statistics",
             get(settings::get_storage).delete(settings::clear_storage),
         )

@@ -99,7 +99,7 @@ async fn generate_local(
     .await?;
     let commit_message = clean_generated_commit_message(&generated);
     if commit_message.is_empty() {
-        return Err(Error::Provider("generated commit message is empty".into()));
+        return Err(Error::provider("generated commit message is empty".into()));
     }
     let payload = ai::WriteGitCommitMessageResponse { commit_message }.encode_to_vec();
     let mut response = Response::new(Body::from(payload));
@@ -114,7 +114,7 @@ async fn generate_local(
 async fn ensure_configured_model(registry: &TransportRegistry, model_id: &str) -> Result<()> {
     if model_id.starts_with(ADAPTER_ID_PREFIX) {
         let plugins = registry.plugins().ok_or_else(|| {
-            Error::Provider(format!("commit plugin model {model_id} is unavailable"))
+            Error::provider(format!("commit plugin model {model_id} is unavailable"))
         })?;
         plugins.model_descriptor(model_id).await?;
         return Ok(());
@@ -122,7 +122,7 @@ async fn ensure_configured_model(registry: &TransportRegistry, model_id: &str) -
     if registry.store().model(model_id).await?.is_some() {
         return Ok(());
     }
-    Err(Error::Provider(format!(
+    Err(Error::provider(format!(
         "commit model {model_id} is not configured; select a configured model in the commit settings"
     )))
 }
@@ -190,7 +190,7 @@ async fn generate(
                 Ok(Some(event)) => match event? {
                     ModelEvent::TextDelta(delta) => accumulated.push_str(&delta),
                     ModelEvent::ToolCallStart { .. } => {
-                        return Err(Error::Provider(
+                        return Err(Error::provider(
                             "commit message generation must not invoke tools".into(),
                         ));
                     }
@@ -203,7 +203,7 @@ async fn generate(
             }
         }
         if !finished && !deadline_hit {
-            return Err(Error::Provider(
+            return Err(Error::provider(
                 "provider stream ended without Done during commit message generation".into(),
             ));
         }
@@ -214,13 +214,13 @@ async fn generate(
         Ok(result) => {
             result?;
             if accumulated.trim().is_empty() {
-                return Err(Error::Provider("generated commit message is empty".into()));
+                return Err(Error::provider("generated commit message is empty".into()));
             }
             Ok(accumulated)
         }
         Err(_) => {
             cancellation.cancel();
-            Err(Error::Provider(
+            Err(Error::provider(
                 "commit message generation timed out".into(),
             ))
         }

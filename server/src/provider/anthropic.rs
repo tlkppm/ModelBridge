@@ -268,7 +268,7 @@ impl Provider for AnthropicProvider {
                 yield ModelEvent::Done(finish);
             }
             if !terminal {
-                Err(Error::Provider("Anthropic stream ended without message_stop".into()))?;
+                Err(Error::provider("Anthropic stream ended without message_stop".into()))?;
             }
         })
     }
@@ -303,7 +303,7 @@ fn close_anthropic_block(
 fn apply_model(body: &mut Value, model: &crate::model::ModelSpec) -> Result<()> {
     let object = body
         .as_object_mut()
-        .ok_or_else(|| Error::Provider("Anthropic request body is not an object".into()))?;
+        .ok_or_else(|| Error::provider("Anthropic request body is not an object".into()))?;
     if model.reasoning.enabled {
         object.insert(
             "thinking".into(),
@@ -470,14 +470,14 @@ fn required_string<'a>(value: &'a Value, name: &str) -> Result<&'a str> {
     value
         .get(name)
         .and_then(Value::as_str)
-        .ok_or_else(|| Error::Provider(format!("Anthropic event is missing {name}")))
+        .ok_or_else(|| Error::provider(format!("Anthropic event is missing {name}")))
 }
 
 fn required_u64(value: &Value, name: &str) -> Result<u64> {
     value
         .get(name)
         .and_then(Value::as_u64)
-        .ok_or_else(|| Error::Provider(format!("Anthropic event is missing {name}")))
+        .ok_or_else(|| Error::provider(format!("Anthropic event is missing {name}")))
 }
 
 pub(crate) fn anthropic_usage(value: &Value) -> Usage {

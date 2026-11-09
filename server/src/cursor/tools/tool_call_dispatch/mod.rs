@@ -45,7 +45,7 @@ pub(super) async fn start(
     }
 
     if is_mcp_auth(call) {
-        return interaction::start(runtime, call).await;
+        return interaction::start(runtime, call, &context.conversation_id).await;
     }
 
     if context.task_disabled(call) {
@@ -62,7 +62,7 @@ pub(super) async fn start(
         }
         "write" | "strreplace" | "editnotebook" => edit::start(runtime, call, context).await,
         "askquestion" | "websearch" | "webfetch" | "switchmode" | "createplan"
-        | "generateimage" => interaction::start(runtime, call).await,
+        | "generateimage" => interaction::start(runtime, call, &context.conversation_id).await,
         "todowrite" | "updatecurrentstep" => local::start(call, message_index),
         "semblesearch" | "semblefindrelated" => search::start(results, call, store.cloned()),
         _ => Ok(unavailable_tool(call)),
@@ -138,10 +138,11 @@ pub(super) async fn resume_interaction(
     results: &ToolResultSender,
     search: &WebSearch,
     fetch: &WebFetch,
+    store: Option<Store>,
     pending: PendingInteraction,
     response: &pb::InteractionResponse,
 ) -> Result<InteractionContinuation> {
-    interaction::resume(results, search, fetch, pending, response).await
+    interaction::resume(results, search, fetch, store, pending, response).await
 }
 
 fn is_shell_tool(name: &str) -> bool {

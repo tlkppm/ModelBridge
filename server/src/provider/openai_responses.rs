@@ -119,6 +119,7 @@ impl Provider for OpenAiResponsesProvider {
             let mut saw_tool = false;
             let mut saw_completed_item = false;
             let mut terminal = false;
+            let mut hosted_image = false;
             loop {
                 let event = tokio::select! {
                     _ = cancellation.cancelled() => { return; }
@@ -155,6 +156,9 @@ impl Provider for OpenAiResponsesProvider {
                         if thinking_open => { thinking_open = false; yield ModelEvent::ThinkingEnd; }
                     "response.output_item.added" => {
                         let item = value.get("item").unwrap_or(&Value::Null);
+                        if item.get("type").and_then(Value::as_str) == Some("image_generation_call") {
+                            hosted_image = true;
+                        }
                         if item.get("type").and_then(Value::as_str) == Some("function_call") {
                             let index = required_u64(&value, "output_index")? as usize;
                             saw_tool = true;
@@ -216,7 +220,20 @@ impl Provider for OpenAiResponsesProvider {
                             }
                         }
                     }
+                    kind if kind.starts_with("response.image_generation_call.") => {
+                        hosted_image = true;
+                    }
                     "response.completed" => {
+                        if hosted_image {
+                            Err(Error::Provider(crate::ProviderFailure {
+                                message: "OpenAI Responses error: hosted image output is not accepted on the chat route".into(),
+                                status: None,
+                                error_type: Some("image_generation_user_error".into()),
+                                code: Some("invalid_value".into()),
+                                param: Some("image_generation".into()),
+                                retryable: false,
+                            }))?;
+                        }
                         if let Some(usage) = value.pointer("/response/usage") { yield ModelEvent::Usage(responses_usage(usage)); }
                         if thinking_open { thinking_open = false; yield ModelEvent::ThinkingEnd; }
                         if text_open { text_open = false; yield ModelEvent::TextEnd; }
@@ -225,7 +242,7 @@ impl Provider for OpenAiResponsesProvider {
                             yield ModelEvent::ToolCallEnd { index: *index };
                         }
                         if tools.values().any(|tool| !tool.started) {
-                            Err(Error::Provider("OpenAI Responses completed with incomplete tool metadata".into()))?;
+                            Err(Error::provider("OpenAI Responses completed with incomplete tool metadata".into()))?;
                         }
                         terminal = true;
                         if !reasoning_items.is_empty() {
@@ -255,7 +272,7 @@ impl Provider for OpenAiResponsesProvider {
                 if thinking_open { yield ModelEvent::ThinkingEnd; }
                 if text_open { yield ModelEvent::TextEnd; }
                 if tools.values().any(|tool| !tool.ended) {
-                    Err(Error::Provider("OpenAI Responses stream ended with an incomplete tool call".into()))?;
+                    Err(Error::provider("OpenAI Responses stream ended with an incomplete tool call".into()))?;
                 }
                 terminal = true;
                 if !reasoning_items.is_empty() {
@@ -267,7 +284,7 @@ impl Provider for OpenAiResponsesProvider {
                 yield ModelEvent::Done(if saw_tool { FinishReason::ToolUse } else { FinishReason::Stop });
             }
             if !terminal {
-                Err(Error::Provider("OpenAI Responses stream ended without response.completed or response.incomplete".into()))?;
+                Err(Error::provider("OpenAI Responses stream ended without response.completed or response.incomplete".into()))?;
             }
         })
     }
@@ -324,7 +341,7 @@ fn update_response_tool(
             tool.arguments.push_str(&snapshot[tool.arguments.len()..]);
         }
         ResponseToolArguments::Snapshot(_) => {
-            return Err(Error::Provider(
+            return Err(Error::provider(
                 "OpenAI Responses final tool arguments do not match streamed arguments".into(),
             ));
         }
@@ -348,7 +365,7 @@ fn update_response_tool(
     }
     if done && !tool.ended {
         if !tool.started {
-            return Err(Error::Provider(
+            return Err(Error::provider(
                 "OpenAI Responses function call is missing call_id or name".into(),
             ));
         }
@@ -365,7 +382,7 @@ fn apply_model(
 ) -> Result<()> {
     let object = body
         .as_object_mut()
-        .ok_or_else(|| Error::Provider("OpenAI Responses request body is not an object".into()))?;
+        .ok_or_else(|| Error::provider("OpenAI Responses request body is not an object".into()))?;
     if let Some(max) = model.max_output_tokens.or(route_max_output_tokens) {
         object.insert("max_output_tokens".into(), json!(max));
     }
@@ -519,7 +536,7 @@ fn required_u64(value: &Value, name: &str) -> Result<u64> {
     value
         .get(name)
         .and_then(Value::as_u64)
-        .ok_or_else(|| Error::Provider(format!("OpenAI Responses event is missing {name}")))
+        .ok_or_else(|| Error::provider(format!("OpenAI Responses event is missing {name}")))
 }
 
 pub(crate) fn responses_usage(value: &Value) -> Usage {

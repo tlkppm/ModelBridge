@@ -303,7 +303,7 @@ impl ControlService {
         let status = response.status();
         if !status.is_success() {
             let message = response.text().await.unwrap_or_default();
-            return Err(Error::Provider(format!(
+            return Err(Error::provider(format!(
                 "advertisement service failed ({status}): {}",
                 message.chars().take(200).collect::<String>()
             )));
@@ -337,7 +337,7 @@ impl ControlService {
         let status = response.status();
         if !status.is_success() {
             let message = response.text().await.unwrap_or_default();
-            return Err(Error::Provider(format!(
+            return Err(Error::provider(format!(
                 "advertisement dismissal failed ({status}): {}",
                 message.chars().take(200).collect::<String>()
             )));
@@ -512,7 +512,7 @@ impl ControlService {
                         Some("model connectivity test timed out after 45 seconds"),
                     )
                     .await?;
-                return Err(Error::Provider(
+                return Err(Error::provider(
                     "model connectivity test timed out after 45 seconds".into(),
                 ));
             }
@@ -520,7 +520,7 @@ impl ControlService {
         let elapsed = started.elapsed();
         let output = output.trim().to_string();
         if first_valid_response_at.is_none() {
-            return Err(Error::Provider(
+            return Err(Error::provider(
                 "model connectivity test received no valid response".into(),
             ));
         }
@@ -704,6 +704,34 @@ impl ControlService {
         settings: ExternalApiSettings,
     ) -> Result<ExternalApiSettings> {
         self.store.set_external_api_settings(settings).await
+    }
+
+    pub async fn image_generation_settings(
+        &self,
+    ) -> Result<crate::store::ImageGenerationSettingsView> {
+        let settings = self.store.image_generation_settings().await?;
+        crate::cursor::services::images::settings_view(&self.store, settings).await
+    }
+
+    pub async fn set_image_generation_settings(
+        &self,
+        input: crate::store::ImageGenerationSettingsInput,
+    ) -> Result<crate::store::ImageGenerationSettingsView> {
+        let settings =
+            crate::cursor::services::images::prepare_settings(&self.store, input).await?;
+        let settings = self.store.set_image_generation_settings(settings).await?;
+        crate::cursor::services::images::settings_view(&self.store, settings).await
+    }
+
+    pub async fn discover_image_models(
+        &self,
+        input: crate::store::ImageGenerationSettingsInput,
+    ) -> Result<DiscoveredModels> {
+        let body = crate::cursor::services::images::model_catalog(&self.store, input).await?;
+        let mut models = model_ids(body.get("data").unwrap_or(&body));
+        models.sort();
+        models.dedup();
+        Ok(DiscoveredModels { models })
     }
 
     pub async fn set_ports(&self, settings: PortSettings) -> Result<PortSettings> {
@@ -985,7 +1013,7 @@ async fn openai_models(
             Err(error) => last_error = Some(error),
         }
     }
-    Err(last_error.unwrap_or_else(|| Error::Provider("no model discovery URL available".into())))
+    Err(last_error.unwrap_or_else(|| Error::provider("no model discovery URL available".into())))
 }
 
 async fn openai_models_at(
@@ -1004,7 +1032,7 @@ async fn openai_models_at(
     let status = response.status();
     let body: serde_json::Value = response.json().await?;
     if !status.is_success() {
-        return Err(Error::Provider(format!(
+        return Err(Error::provider(format!(
             "model discovery failed ({status}): {body}"
         )));
     }
@@ -1024,7 +1052,7 @@ async fn anthropic_models(
             Err(error) => last_error = Some(error),
         }
     }
-    Err(last_error.unwrap_or_else(|| Error::Provider("no model discovery URL available".into())))
+    Err(last_error.unwrap_or_else(|| Error::provider("no model discovery URL available".into())))
 }
 
 async fn anthropic_models_at(
@@ -1052,7 +1080,7 @@ async fn anthropic_models_at(
         let status = response.status();
         let body: serde_json::Value = response.json().await?;
         if !status.is_success() {
-            return Err(Error::Provider(format!(
+            return Err(Error::provider(format!(
                 "model discovery failed ({status}): {body}"
             )));
         }
@@ -1065,7 +1093,7 @@ async fn anthropic_models_at(
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned);
         if after_id.is_none() {
-            return Err(Error::Provider(
+            return Err(Error::provider(
                 "Anthropic model response has_more without last_id".into(),
             ));
         }

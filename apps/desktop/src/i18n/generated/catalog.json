@@ -26,6 +26,18 @@
         }
       ]
     },
+    "00b5cb2ea36c0029": {
+      "source": "已保存配置的生图地址",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 283,
+          "column": 20
+        }
+      ]
+    },
     "01f3e69a5a9b2c9b": {
       "source": "访问模型服务所需的密钥。",
       "kind": "text",
@@ -91,6 +103,11 @@
           "column": 10
         },
         {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 196,
+          "column": 14
+        },
+        {
           "file": "features/settings/PricingSettingsCard.tsx",
           "line": 96,
           "column": 75
@@ -102,7 +119,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 183,
+          "line": 184,
           "column": 82
         },
         {
@@ -311,7 +328,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 100,
+          "line": 101,
           "column": 38
         }
       ]
@@ -340,7 +357,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 279,
+          "line": 281,
           "column": 26
         }
       ]
@@ -423,6 +440,18 @@
         }
       ]
     },
+    "117b22c3af9f4a6b": {
+      "source": "图片模型留空时请求不传 model，由上游决定默认模型；并非所有上游都支持。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 275,
+          "column": 39
+        }
+      ]
+    },
     "12430375c0db4727": {
       "source": "按配置的 Token 价格估算。",
       "kind": "text",
@@ -461,6 +490,23 @@
           "file": "features/models/CursorSettingsPage.tsx",
           "line": 395,
           "column": 36
+        }
+      ]
+    },
+    "12c11d74a41e1c61": {
+      "source": "密钥操作",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 237,
+          "column": 29
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 238,
+          "column": 32
         }
       ]
     },
@@ -526,6 +572,11 @@
           "file": "features/models/CursorModelEditor.tsx",
           "line": 159,
           "column": 322
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 255,
+          "column": 30
         }
       ]
     },
@@ -640,6 +691,18 @@
         }
       ]
     },
+    "1a10eddc2ccb0a7f": {
+      "source": "显式清空密钥",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 239,
+          "column": 130
+        }
+      ]
+    },
     "1a3f0617d6de8e52": {
       "source": "用户名",
       "kind": "text",
@@ -693,7 +756,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 283,
+          "line": 285,
           "column": 131
         }
       ]
@@ -719,17 +782,17 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 70,
+          "line": 71,
           "column": 42
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 188,
+          "line": 189,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 215,
+          "line": 216,
           "column": 58
         }
       ]
@@ -842,7 +905,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 256,
+          "line": 258,
           "column": 43
         }
       ]
@@ -866,7 +929,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 125,
+          "line": 126,
           "column": 15
         }
       ]
@@ -890,7 +953,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 306,
+          "line": 308,
           "column": 24
         }
       ]
@@ -930,6 +993,18 @@
           "file": "features/models/CursorModelEditor.tsx",
           "line": 159,
           "column": 42
+        }
+      ]
+    },
+    "2570de8c06b70ab7": {
+      "source": "替换密钥",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 239,
+          "column": 92
         }
       ]
     },
@@ -988,6 +1063,18 @@
         }
       ]
     },
+    "2c8881f2974b3230": {
+      "source": "已保存配置状态",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 278,
+          "column": 46
+        }
+      ]
+    },
     "2caeaec539e78898": {
       "source": "思考预算 Token",
       "kind": "text",
@@ -1041,6 +1128,11 @@
           "column": 21
         },
         {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 191,
+          "column": 62
+        },
+        {
           "file": "features/settings/PricingSettingsCard.tsx",
           "line": 90,
           "column": 64
@@ -1052,12 +1144,12 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 179,
+          "line": 180,
           "column": 81
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 298,
+          "line": 300,
           "column": 22
         },
         {
@@ -1158,7 +1250,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 149,
+          "line": 150,
           "column": 15
         }
       ]
@@ -1168,6 +1260,26 @@
       "kind": "text",
       "placeholders": [],
       "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 235,
+          "column": 77
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 266,
+          "column": 136
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 270,
+          "column": 161
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 271,
+          "column": 134
+        },
         {
           "file": "features/settings/ProxySettingsCard.tsx",
           "line": 75,
@@ -1238,7 +1350,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 241,
+          "line": 243,
           "column": 27
         }
       ]
@@ -1311,7 +1423,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 308,
+          "line": 310,
           "column": 42
         }
       ]
@@ -1364,7 +1476,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 290,
+          "line": 292,
           "column": 14
         }
       ]
@@ -1388,7 +1500,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 241,
+          "line": 243,
           "column": 39
         }
       ]
@@ -1455,12 +1567,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 248,
+          "line": 250,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 254,
+          "line": 256,
           "column": 26
         }
       ]
@@ -1520,7 +1632,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 156,
+          "line": 157,
           "column": 66
         }
       ]
@@ -1532,7 +1644,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 274,
+          "line": 276,
           "column": 52
         }
       ]
@@ -1592,6 +1704,18 @@
           "file": "features/settings/ProxySettingsCard.tsx",
           "line": 55,
           "column": 59
+        }
+      ]
+    },
+    "4560a43d5da71fa8": {
+      "source": "上游未返回候选模型，仍可手动填写。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 261,
+          "column": 80
         }
       ]
     },
@@ -1659,6 +1783,45 @@
         }
       ]
     },
+    "48156e412e6b80bf": {
+      "source": "图片模型",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 250,
+          "column": 27
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 273,
+          "column": 46
+        }
+      ]
+    },
+    "485a26050ce57431": {
+      "source": "连接方式",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 211,
+          "column": 27
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 212,
+          "column": 30
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 263,
+          "column": 46
+        }
+      ]
+    },
     "48b970b568a7f8f9": {
       "source": "代理设置",
       "kind": "text",
@@ -1710,6 +1873,11 @@
           "column": 8
         },
         {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 196,
+          "column": 42
+        },
+        {
           "file": "features/settings/ProxySettingsCard.tsx",
           "line": 69,
           "column": 135
@@ -1718,6 +1886,18 @@
           "file": "features/settings/TabSettingsCard.tsx",
           "line": 81,
           "column": 81
+        }
+      ]
+    },
+    "492a65ac09a4e399": {
+      "source": "保留已保存密钥",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 239,
+          "column": 49
         }
       ]
     },
@@ -1806,6 +1986,18 @@
         }
       ]
     },
+    "4c4177a3d1f87401": {
+      "source": "保存后供 Cursor 图片生成工具使用。切换开关不会发起网络请求。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 204,
+          "column": 19
+        }
+      ]
+    },
     "4d0680f9efaef147": {
       "source": "未读",
       "kind": "text",
@@ -1859,6 +2051,37 @@
           "file": "features/settings/TabSettingsCard.tsx",
           "line": 60,
           "column": 41
+        }
+      ]
+    },
+    "4ee4c407271c92c1": {
+      "source": "已保存的独立密钥",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 234,
+          "column": 22
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 271,
+          "column": 48
+        }
+      ]
+    },
+    "506455635d0531b4": {
+      "source": "获取候选失败，仍可手动填写：{error}",
+      "kind": "template",
+      "placeholders": [
+        "error"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 259,
+          "column": 12
         }
       ]
     },
@@ -1953,7 +2176,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 177,
+          "line": 178,
           "column": 26
         }
       ]
@@ -2076,7 +2299,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 234,
+          "line": 236,
           "column": 78
         }
       ]
@@ -2090,6 +2313,18 @@
           "file": "features/models/CursorModelEditor.tsx",
           "line": 161,
           "column": 69
+        }
+      ]
+    },
+    "58e4dcf189ac62a0": {
+      "source": "独立地址将自动拼接图片生成端点，已有版本路径不会重复添加。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 232,
+          "column": 15
         }
       ]
     },
@@ -2122,7 +2357,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 238,
+          "line": 240,
           "column": 21
         }
       ]
@@ -2179,6 +2414,18 @@
           "file": "shared/ui/ModelSelect.tsx",
           "line": 120,
           "column": 34
+        }
+      ]
+    },
+    "5cc9910f88d696f2": {
+      "source": "独立完整 URL 将原样用于生图请求，不追加路径。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 231,
+          "column": 15
         }
       ]
     },
@@ -2313,6 +2560,23 @@
         }
       ]
     },
+    "6309dab61d209db5": {
+      "source": "替换密钥时请输入非空 API 密钥。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "demo/api.ts",
+          "line": 248,
+          "column": 21
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 105,
+          "column": 25
+        }
+      ]
+    },
     "6320b4a8722a851f": {
       "source": "状态",
       "kind": "text",
@@ -2366,7 +2630,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 519,
+          "line": 546,
           "column": 43
         }
       ]
@@ -2457,6 +2721,18 @@
         }
       ]
     },
+    "667fdf2452d96797": {
+      "source": "手动输入图片模型标识，可留空",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 252,
+          "column": 26
+        }
+      ]
+    },
     "66f7ceff962da68c": {
       "source": "用于首页价值估算的 Token 单价，单位：美元 / 百万 Token。",
       "kind": "text",
@@ -2493,7 +2769,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 100,
+          "line": 101,
           "column": 55
         }
       ]
@@ -2595,6 +2871,18 @@
         }
       ]
     },
+    "6e35fc82875683f0": {
+      "source": "配置未完成",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 279,
+          "column": 51
+        }
+      ]
+    },
     "6e86570183c3cdd0": {
       "source": "当前已是最新版本",
       "kind": "text",
@@ -2657,7 +2945,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 167,
+          "line": 168,
           "column": 16
         }
       ]
@@ -2674,6 +2962,23 @@
         }
       ]
     },
+    "7835ac0d2f9af932": {
+      "source": "图片生成地址必须是有效的 HTTP 或 HTTPS URL。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "demo/api.ts",
+          "line": 273,
+          "column": 21
+        },
+        {
+          "file": "demo/api.ts",
+          "line": 276,
+          "column": 21
+        }
+      ]
+    },
     "788db1cfec2a3db5": {
       "source": "主题",
       "kind": "text",
@@ -2681,7 +2986,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 266,
+          "line": 268,
           "column": 26
         }
       ]
@@ -2705,7 +3010,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 514,
+          "line": 541,
           "column": 43
         }
       ]
@@ -2729,7 +3034,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 299,
+          "line": 301,
           "column": 23
         }
       ]
@@ -2743,6 +3048,18 @@
           "file": "features/settings/ExternalApiSettingsCard.tsx",
           "line": 47,
           "column": 19
+        }
+      ]
+    },
+    "7cce2c6c913d11e2": {
+      "source": "已有连接的完整路径无法用于生图，请改用独立完整地址。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "demo/api.ts",
+          "line": 298,
+          "column": 25
         }
       ]
     },
@@ -2784,7 +3101,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 143,
+          "line": 144,
           "column": 83
         }
       ]
@@ -2856,8 +3173,25 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 461,
+          "line": 488,
           "column": 21
+        }
+      ]
+    },
+    "815335d01a573756": {
+      "source": "独立 API",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 189,
+          "column": 86
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 213,
+          "column": 95
         }
       ]
     },
@@ -2885,6 +3219,11 @@
           "file": "features/models/CursorModelEditor.tsx",
           "line": 159,
           "column": 334
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 255,
+          "column": 42
         }
       ]
     },
@@ -2931,6 +3270,18 @@
           "file": "features/settings/ProxySettingsCard.tsx",
           "line": 46,
           "column": 129
+        }
+      ]
+    },
+    "84c4e51511639ed0": {
+      "source": "密钥操作无效。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "demo/api.ts",
+          "line": 245,
+          "column": 21
         }
       ]
     },
@@ -3057,7 +3408,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 237,
+          "line": 239,
           "column": 22
         }
       ]
@@ -3115,6 +3466,23 @@
         }
       ]
     },
+    "8f4e2f109b22e9db": {
+      "source": "所选连接已失效或不是 OpenAI 兼容内置连接，请重新选择。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "demo/api.ts",
+          "line": 287,
+          "column": 23
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 99,
+          "column": 7
+        }
+      ]
+    },
     "8f9b0d6cc477d334": {
       "source": "控制 Cursor TAB 相关接口的连接方式。",
       "kind": "text",
@@ -3165,6 +3533,28 @@
         }
       ]
     },
+    "920d4e3dd700ced4": {
+      "source": "独立地址已跨源变更，必须替换密钥或显式清空，不能保留旧密钥。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "demo/api.ts",
+          "line": 254,
+          "column": 23
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 108,
+          "column": 25
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 248,
+          "column": 74
+        }
+      ]
+    },
     "92156a483d4ba248": {
       "source": "仅删除请求、响应和追踪附件等详细内容，保留调用汇总、统计指标和配置。",
       "kind": "text",
@@ -3172,8 +3562,20 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 159,
+          "line": 160,
           "column": 7
+        }
+      ]
+    },
+    "9270aff03f9690a5": {
+      "source": "OpenAI 兼容内置连接",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 179,
+          "column": 46
         }
       ]
     },
@@ -3398,7 +3800,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 245,
+          "line": 247,
           "column": 26
         }
       ]
@@ -3434,7 +3836,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 63,
+          "line": 64,
           "column": 34
         }
       ]
@@ -3537,6 +3939,11 @@
           "column": 27
         },
         {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 193,
+          "column": 29
+        },
+        {
           "file": "features/settings/PricingSettingsCard.tsx",
           "line": 92,
           "column": 31
@@ -3548,7 +3955,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 180,
+          "line": 181,
           "column": 133
         },
         {
@@ -3701,6 +4108,11 @@
           "file": "features/models/CursorModelEditor.tsx",
           "line": 155,
           "column": 61
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 228,
+          "column": 28
         }
       ]
     },
@@ -3988,6 +4400,18 @@
         }
       ]
     },
+    "b61f37d12e9b151d": {
+      "source": "新的 API 密钥",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 242,
+          "column": 64
+        }
+      ]
+    },
     "b6725f218ebaef26": {
       "source": "已显示 Dock 栏图标",
       "kind": "text",
@@ -4007,7 +4431,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 156,
+          "line": 157,
           "column": 45
         }
       ]
@@ -4033,7 +4457,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 282,
+          "line": 284,
           "column": 22
         }
       ]
@@ -4047,6 +4471,18 @@
           "file": "features/models/CursorModelTestResult.tsx",
           "line": 42,
           "column": 50
+        }
+      ]
+    },
+    "b8784c8dd5636ff2": {
+      "source": "重试",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 196,
+          "column": 32
         }
       ]
     },
@@ -4179,7 +4615,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 283,
+          "line": 285,
           "column": 31
         }
       ]
@@ -4191,8 +4627,25 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 274,
+          "line": 276,
           "column": 40
+        }
+      ]
+    },
+    "bccbb7ea0f038c92": {
+      "source": "完整生图请求 URL",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 223,
+          "column": 50
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 270,
+          "column": 69
         }
       ]
     },
@@ -4294,6 +4747,18 @@
         }
       ]
     },
+    "c62a58459251b02c": {
+      "source": "图片生成",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 199,
+          "column": 29
+        }
+      ]
+    },
     "c7ea2c9bc43134bd": {
       "source": "编辑模型",
       "kind": "text",
@@ -4378,6 +4843,45 @@
         }
       ]
     },
+    "c9df4ee8e9751bc4": {
+      "source": "已有连接",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 189,
+          "column": 74
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 213,
+          "column": 51
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 217,
+          "column": 45
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 265,
+          "column": 48
+        }
+      ]
+    },
+    "ca4aafaab6a00dfc": {
+      "source": "图片生成设置已保存",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 148,
+          "column": 15
+        }
+      ]
+    },
     "cb2f1709f983d2f4": {
       "source": "模型名称",
       "kind": "text",
@@ -4412,6 +4916,18 @@
         }
       ]
     },
+    "cef599c2f94f4741": {
+      "source": "获取模型只读取候选列表，不验证生图能力，也不会生成图片。发现失败不影响手动填写。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 276,
+          "column": 39
+        }
+      ]
+    },
     "cfae1a14d2120c57": {
       "source": "详细模式",
       "kind": "text",
@@ -4419,12 +4935,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 165,
+          "line": 166,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 171,
+          "line": 172,
           "column": 20
         }
       ]
@@ -4436,7 +4952,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 202,
+          "line": 203,
           "column": 21
         }
       ]
@@ -4472,7 +4988,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 158,
+          "line": 159,
           "column": 7
         }
       ]
@@ -4634,6 +5150,40 @@
         }
       ]
     },
+    "d94384000fcdcb6f": {
+      "source": "图片生成配置格式无效。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "demo/api.ts",
+          "line": 236,
+          "column": 58
+        },
+        {
+          "file": "demo/api.ts",
+          "line": 241,
+          "column": 21
+        }
+      ]
+    },
+    "da06a697294f727a": {
+      "source": "独立 API 地址",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 223,
+          "column": 68
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 270,
+          "column": 87
+        }
+      ]
+    },
     "da521d1c1cbd36af": {
       "source": "需要授权安装证书",
       "kind": "text",
@@ -4643,6 +5193,18 @@
           "file": "features/models/CursorSettingsPage.tsx",
           "line": 344,
           "column": 47
+        }
+      ]
+    },
+    "da63b742e6864147": {
+      "source": "省略模型，由上游决定",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 273,
+          "column": 118
         }
       ]
     },
@@ -4747,7 +5309,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 318,
+          "line": 320,
           "column": 30
         },
         {
@@ -4791,6 +5353,16 @@
       "kind": "text",
       "placeholders": [],
       "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 235,
+          "column": 66
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 271,
+          "column": 123
+        },
         {
           "file": "features/settings/ProxySettingsCard.tsx",
           "line": 75,
@@ -4872,6 +5444,18 @@
         }
       ]
     },
+    "e1b2e3a2f2af3234": {
+      "source": "保存后将删除独立密钥；仅适用于无需密钥的上游。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 247,
+          "column": 76
+        }
+      ]
+    },
     "e206b599d7d9f411": {
       "source": "打开仓库失败：{error}",
       "kind": "template",
@@ -4925,6 +5509,23 @@
         {
           "file": "features/settings/CommitSettingsCard.tsx",
           "line": 197,
+          "column": 24
+        }
+      ]
+    },
+    "e3280391f800817b": {
+      "source": "启用图片生成",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 203,
+          "column": 20
+        },
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 206,
           "column": 24
         }
       ]
@@ -5001,8 +5602,20 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 76,
+          "line": 77,
           "column": 17
+        }
+      ]
+    },
+    "e5fd2924a6a4c65b": {
+      "source": "暂无 OpenAI 兼容内置连接，请先添加连接或改用独立 API。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 221,
+          "column": 96
         }
       ]
     },
@@ -5052,6 +5665,18 @@
         }
       ]
     },
+    "e868c99d5b82917d": {
+      "source": "配置完整，未验证生图能力",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 279,
+          "column": 31
+        }
+      ]
+    },
     "e8b1268c1e3610f2": {
       "source": "已存在",
       "kind": "text",
@@ -5071,7 +5696,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 162,
+          "line": 163,
           "column": 26
         }
       ]
@@ -5174,7 +5799,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 221,
+          "line": 222,
           "column": 16
         }
       ]
@@ -5271,6 +5896,18 @@
         }
       ]
     },
+    "f5ecd0314fc421c0": {
+      "source": "仅借用连接的地址、密钥和自定义 Headers，不修改聊天模型标识。插件连接不受支持。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 219,
+          "column": 43
+        }
+      ]
+    },
     "f670359b3167f1e7": {
       "source": "请勿分享密钥、验证码或私密对话内容。",
       "kind": "text",
@@ -5304,7 +5941,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 249,
+          "line": 251,
           "column": 21
         }
       ]
@@ -5321,6 +5958,20 @@
         }
       ]
     },
+    "f7c3b54b06143401": {
+      "source": "已保存配置错误：{error}",
+      "kind": "template",
+      "placeholders": [
+        "error"
+      ],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 281,
+          "column": 83
+        }
+      ]
+    },
     "f85537d1fd2ef6f6": {
       "source": "自定义概览筛选",
       "kind": "text",
@@ -5330,6 +5981,18 @@
           "file": "features/home/overview/OverviewTimeRangeFilter.tsx",
           "line": 102,
           "column": 19
+        }
+      ]
+    },
+    "f94959b93273633e": {
+      "source": "请选择已有连接",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 179,
+          "column": 25
         }
       ]
     },
@@ -5356,6 +6019,18 @@
           "file": "shared/ui/ModelSelect.tsx",
           "line": 168,
           "column": 21
+        }
+      ]
+    },
+    "f98a7dfc38332cda": {
+      "source": "不会回显已保存密钥。空输入不代表清空；保存或取消后清除密钥草稿，保存失败时需重新输入。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 246,
+          "column": 43
         }
       ]
     },
@@ -5390,7 +6065,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 189,
+          "line": 190,
           "column": 21
         }
       ]
@@ -5513,7 +6188,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 309,
+          "line": 311,
           "column": 38
         }
       ]
@@ -5534,6 +6209,11 @@
           "column": 15
         },
         {
+          "file": "features/settings/ImageGenerationSettingsCard.tsx",
+          "line": 193,
+          "column": 17
+        },
+        {
           "file": "features/settings/PricingSettingsCard.tsx",
           "line": 92,
           "column": 19
@@ -5545,7 +6225,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 180,
+          "line": 181,
           "column": 121
         },
         {
@@ -5574,17 +6254,17 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 71,
+          "line": 72,
           "column": 46
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 201,
+          "line": 202,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 216,
+          "line": 217,
           "column": 58
         }
       ]

@@ -337,7 +337,7 @@ pub fn resolve_request_url(
     append_standard_endpoint(&base_url, &endpoint)
 }
 
-fn append_standard_endpoint(base_url: &str, endpoint: &str) -> Result<String> {
+pub(crate) fn append_standard_endpoint(base_url: &str, endpoint: &str) -> Result<String> {
     let mut url = Url::parse(base_url)
         .map_err(|error| Error::Config(format!("invalid model server URL: {error}")))?;
     let base_path = url.path().trim_end_matches('/').to_string();

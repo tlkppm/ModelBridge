@@ -206,7 +206,7 @@ impl PluginRegistry {
 
     pub async fn model_descriptor(&self, model_id: &str) -> Result<PluginModelDescriptor> {
         let (plugin_id, provider_id, upstream_id) = parse_model_id(model_id)
-            .ok_or_else(|| Error::Provider(format!("invalid plugin model ID: {model_id}")))?;
+            .ok_or_else(|| Error::provider(format!("invalid plugin model ID: {model_id}")))?;
         let executable = self.executable()?;
         let entry = self.find_entry(&executable, plugin_id).await?;
         let provider = find_provider(&entry, provider_id)?;
@@ -246,7 +246,7 @@ impl PluginRegistry {
             let model_id = invocation.request.model.model_id.clone();
             let (plugin_id, provider_id, upstream_id) = parse_model_id(&model_id)
                 .map(|(plugin, provider, model)| (plugin.to_owned(), provider.to_owned(), model.to_owned()))
-                .ok_or_else(|| Error::Provider(format!("invalid plugin model ID: {model_id}")))?;
+                .ok_or_else(|| Error::provider(format!("invalid plugin model ID: {model_id}")))?;
             let executable = registry.executable()?;
             let entry = registry.find_entry(&executable, &plugin_id).await?;
             let provider = find_provider(&entry, &provider_id)?.clone();
@@ -296,7 +296,7 @@ impl PluginRegistry {
                                 let message = value.get("message")
                                     .and_then(serde_json::Value::as_str)
                                     .unwrap_or("plugin provider call failed");
-                                Err(Error::Provider(message.to_owned()))?;
+                                Err(Error::provider(message.to_owned()))?;
                             }
                             status => {
                                 Err(Error::Protocol(format!("unknown plugin provider result: {status}")))?;
@@ -305,7 +305,7 @@ impl PluginRegistry {
                     }
                 }
             }
-            Err(Error::Provider(format!("plugin '{plugin_id}' worker stopped mid-stream")))?;
+            Err(Error::provider(format!("plugin '{plugin_id}' worker stopped mid-stream")))?;
         })
     }
 
@@ -1174,7 +1174,7 @@ impl PluginRegistry {
             }
         }
         if models.is_empty() {
-            return Err(Error::Provider(format!(
+            return Err(Error::provider(format!(
                 "plugin provider '{}' returned no models",
                 provider.id
             )));
@@ -1194,7 +1194,7 @@ impl PluginRegistry {
     ) -> Result<ResourceRecord> {
         let records = self.inner.state.resources(plugin_id, resource_type).await?;
         if records.is_empty() {
-            return Err(Error::Provider(format!(
+            return Err(Error::provider(format!(
                 "plugin '{plugin_id}' has no '{resource_type}' resource; add one first"
             )));
         }
@@ -1204,7 +1204,7 @@ impl PluginRegistry {
             .find(|record| record.state.is_ready(now))
             .or_else(|| records.first())
             .cloned()
-            .ok_or_else(|| Error::Provider("no plugin resource is available".into()))
+            .ok_or_else(|| Error::provider("no plugin resource is available".into()))
     }
 
     async fn find_record(

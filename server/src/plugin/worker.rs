@@ -137,7 +137,7 @@ impl PluginWorker {
                     return result;
                 }
             }
-            Err(Error::Provider(format!(
+            Err(Error::provider(format!(
                 "plugin '{}' worker stopped",
                 self.inner.plugin_id
             )))
@@ -145,7 +145,7 @@ impl PluginWorker {
         .await;
         match result {
             Ok(result) => result,
-            Err(_) => Err(Error::Provider(format!(
+            Err(_) => Err(Error::provider(format!(
                 "plugin '{}' invocation timed out",
                 self.inner.plugin_id
             ))),
@@ -333,7 +333,7 @@ fn spawn_stdout_reader(
                     if let Some(sender) = pending.lock().await.remove(&id) {
                         let value = match error {
                             Some(error) => {
-                                Err(Error::Provider(format!("plugin '{plugin_id}': {error}")))
+                                Err(Error::provider(format!("plugin '{plugin_id}': {error}")))
                             }
                             None => Ok(result),
                         };
@@ -412,7 +412,7 @@ async fn write_message(stdin: &Arc<Mutex<ChildStdin>>, message: &HostMessage<'_>
 
 async fn fail_pending(pending: &Pending, message: &str) {
     for (_, sender) in std::mem::take(&mut *pending.lock().await) {
-        let _ = sender.send(WorkerStreamItem::Result(Err(Error::Provider(
+        let _ = sender.send(WorkerStreamItem::Result(Err(Error::provider(
             message.into(),
         ))));
     }
@@ -546,7 +546,7 @@ impl HostContext {
             .content_length()
             .is_some_and(|size| size > MAX_NETWORK_RESPONSE_BYTES)
         {
-            return Err(Error::Provider(
+            return Err(Error::provider(
                 "plugin network response is larger than allowed".into(),
             ));
         }
@@ -556,7 +556,7 @@ impl HostContext {
             body = response.bytes() => body?,
         };
         if body.len() as u64 > MAX_NETWORK_RESPONSE_BYTES {
-            return Err(Error::Provider(
+            return Err(Error::provider(
                 "plugin network response is larger than allowed".into(),
             ));
         }
@@ -609,7 +609,7 @@ impl HostContext {
                 total += chunk.len() as u64;
                 if total > MAX_STREAM_BYTES {
                     let _ = sender
-                        .send(Err(Error::Provider(
+                        .send(Err(Error::provider(
                             "plugin network stream is larger than allowed".into(),
                         )))
                         .await;

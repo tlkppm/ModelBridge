@@ -118,6 +118,33 @@ export interface ExternalApiSettings {
   api_key: string;
 }
 
+export type ImageGenerationMode = "existing" | "independent";
+export type ImageGenerationKeyAction = "keep" | "replace" | "clear";
+
+export interface ImageGenerationSettingsView {
+  enabled: boolean;
+  mode: ImageGenerationMode;
+  connection_model_hash: string;
+  base_url: string;
+  use_full_url: boolean;
+  image_model: string;
+  has_api_key: boolean;
+  configured: boolean;
+  configuration_error: string | null;
+  endpoint_url: string | null;
+}
+
+export interface ImageGenerationSettingsInput {
+  enabled: boolean;
+  mode: ImageGenerationMode;
+  connection_model_hash: string;
+  base_url: string;
+  use_full_url: boolean;
+  image_model: string;
+  key_action?: ImageGenerationKeyAction;
+  api_key?: string;
+}
+
 export interface StatisticsStorage {
   call_count: number;
   trace_count: number;
@@ -535,6 +562,9 @@ export const api = {
   setPorts: (settings: PortSettings) => request<PortSettings>("/settings/ports", { method: "PUT", body: JSON.stringify(settings) }),
   externalApiSettings: () => request<ExternalApiSettings>("/settings/external-api"),
   setExternalApiSettings: (settings: ExternalApiSettings) => request<ExternalApiSettings>("/settings/external-api", { method: "PUT", body: JSON.stringify(settings) }),
+  imageGenerationSettings: () => request<ImageGenerationSettingsView>("/settings/image-generation"),
+  setImageGenerationSettings: (settings: ImageGenerationSettingsInput) => request<ImageGenerationSettingsView>("/settings/image-generation", { method: "PUT", body: JSON.stringify(settings) }),
+  discoverImageModels: (settings: ImageGenerationSettingsInput) => request<{ models: string[] }>("/settings/image-generation/models", { method: "POST", body: JSON.stringify(settings) }),
   statisticsStorage: () => request<StatisticsStorage>("/settings/storage/statistics"),
   clearStatisticsStorage: (scope: StatisticsStorageScope) => request<StatisticsStorage>("/settings/storage/statistics", { method: "DELETE", body: JSON.stringify({ scope }) }),
   proxySettings: () => request<ProxySettings>("/settings/proxy"),

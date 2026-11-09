@@ -1,0 +1,92 @@
+@use "../../styles/typography" as type;
+
+.content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.description {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+
+  small {
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+    line-height: 1.6;
+  }
+}
+
+.hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.value {
+  min-width: 0;
+  max-width: 65%;
+  color: var(--vscode-descriptionForeground);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.error, .warning {
+  overflow-wrap: anywhere;
+  font-size: type.$font-size-xs;
+  line-height: 1.6;
+}
+
+.error {
+  color: var(--vscode-errorForeground);
+}
+
+.warning {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+.savedStatus {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--vscode-sideBar-border);
+}
+
+.endpoint {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+
+  code {
+    color: var(--vscode-descriptionForeground);
+    overflow-wrap: anywhere;
+    font-size: type.$font-size-xs;
+  }
+}
+
+@media (max-width: 680px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .value {
+    max-width: 100%;
+    text-align: left;
+  }
+}

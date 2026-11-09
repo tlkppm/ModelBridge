@@ -69,7 +69,7 @@ async fn provider_failure_retries_from_the_current_checkpoint_without_hiding_par
             index: 0,
             delta: "{\"path\":".into(),
         }),
-        Err(Error::Provider("stream disconnected".into())),
+        Err(Error::provider("stream disconnected".into())),
     ]);
     provider.push(vec![
         ModelEvent::Start {
