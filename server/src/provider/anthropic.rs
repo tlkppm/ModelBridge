@@ -117,18 +117,19 @@ impl Provider for AnthropicProvider {
             let mut block_types = std::collections::BTreeMap::<usize, String>::new();
             let mut thinking_text = std::collections::HashMap::<usize, String>::new();
             let mut thinking_signatures = std::collections::HashMap::<usize, String>::new();
-            let mut thinking_blocks = Vec::new();
+            let mut thinking_blocks = std::collections::BTreeMap::new();
             let mut finish = None;
             let mut saw_tool = false;
-            let mut terminal = false;
+            let mut saw_message_stop = false;
             let mut final_usage = None::<Usage>;
             while let Some(event) = tokio::select! {
+                biased;
                 _ = cancellation.cancelled() => { return; }
                 event = source.next() => event,
             } {
                 let event = event.map_err(|error| map_sse_error("Anthropic", error))?;
                 let value: Value = serde_json::from_str(&event.data)?;
-                if let Some(error) = provider_event_error("Anthropic", &value) {
+                if let Some(error) = provider_event_error("Anthropic", &event.event, &value) {
                     Err(error)?;
                 }
                 let data_kind = value.get("type").and_then(Value::as_str);
@@ -146,13 +147,21 @@ impl Provider for AnthropicProvider {
                         let kind = required_string(block, "type")?;
                         block_types.insert(index, kind.into());
                         match kind {
-                            "text" => yield ModelEvent::TextStart,
-                            "thinking" => {
-                                thinking_text.insert(index, String::new());
-                                thinking_signatures.insert(index, String::new());
-                                yield ModelEvent::ThinkingStart;
+                            "text" => {
+                                yield ModelEvent::TextStart;
+                                if let Some(text) = block.get("text").and_then(Value::as_str).filter(|text| !text.is_empty()) {
+                                    yield ModelEvent::TextDelta(text.into());
+                                }
                             }
-                            "redacted_thinking" => thinking_blocks.push(block.clone()),
+                            "thinking" => {
+                                let text = block.get("thinking").and_then(Value::as_str).unwrap_or_default();
+                                let signature = block.get("signature").and_then(Value::as_str).unwrap_or_default();
+                                thinking_text.insert(index, text.into());
+                                thinking_signatures.insert(index, signature.into());
+                                yield ModelEvent::ThinkingStart;
+                                if !text.is_empty() { yield ModelEvent::ThinkingDelta(text.into()); }
+                            }
+                            "redacted_thinking" => { thinking_blocks.insert(index, block.clone()); }
                             "tool_use" => {
                                 saw_tool = true;
                                 yield ModelEvent::ToolCallStart {
@@ -160,6 +169,9 @@ impl Provider for AnthropicProvider {
                                     call_id: required_string(block, "id")?.into(),
                                     name: required_string(block, "name")?.into(),
                                 };
+                                if let Some(input) = block.get("input").and_then(Value::as_object).filter(|input| !input.is_empty()) {
+                                    yield ModelEvent::ToolCallArgumentsDelta { index, delta: serde_json::to_string(input)? };
+                                }
                             }
                             _ => {}
                         }
@@ -217,59 +229,27 @@ impl Provider for AnthropicProvider {
                         };
                     }
                     "message_stop" => {
-                        for (index, kind) in std::mem::take(&mut block_types) {
-                            for event in close_anthropic_block(index, &kind, &mut thinking_text, &mut thinking_signatures, &mut thinking_blocks) {
-                                yield event;
-                            }
-                        }
-                        terminal = true;
-                        if !thinking_blocks.is_empty() {
-                            yield ModelEvent::ProviderReplayState(
-                                crate::model::ProviderReplayState {
-                                    provider_kind: "anthropic".into(),
-                                    value: json!({"blocks": std::mem::take(&mut thinking_blocks)}),
-                                },
-                            );
-                        }
-                        if let Some(usage) = final_usage {
-                            yield ModelEvent::Usage(usage);
-                        }
-                        let finish = match finish {
-                            Some(FinishReason::Length) => FinishReason::Length,
-                            _ if saw_tool => FinishReason::ToolUse,
-                            Some(finish) => finish,
-                            None => FinishReason::Stop,
-                        };
-                        yield ModelEvent::Done(finish);
+                        saw_message_stop = true;
+                        break;
                     }
                     _ => {}
                 }
             }
-            if !terminal && finish.is_some() {
-                for (index, kind) in std::mem::take(&mut block_types) {
-                    for event in close_anthropic_block(index, &kind, &mut thinking_text, &mut thinking_signatures, &mut thinking_blocks) {
-                        yield event;
-                    }
+            let finish = finish.or_else(|| saw_message_stop.then_some(if saw_tool { FinishReason::ToolUse } else { FinishReason::Stop }))
+                .ok_or_else(|| Error::provider("Anthropic stream ended without message_stop".into()))?;
+            for (index, kind) in block_types {
+                for event in close_anthropic_block(index, &kind, &mut thinking_text, &mut thinking_signatures, &mut thinking_blocks) {
+                    yield event;
                 }
-                if !thinking_blocks.is_empty() {
-                    yield ModelEvent::ProviderReplayState(crate::model::ProviderReplayState {
-                        provider_kind: "anthropic".into(),
-                        value: json!({"blocks": std::mem::take(&mut thinking_blocks)}),
-                    });
-                }
-                if let Some(usage) = final_usage { yield ModelEvent::Usage(usage); }
-                terminal = true;
-                let finish = match finish {
-                    Some(FinishReason::Length) => FinishReason::Length,
-                    _ if saw_tool => FinishReason::ToolUse,
-                    Some(finish) => finish,
-                    None => FinishReason::Stop,
-                };
-                yield ModelEvent::Done(finish);
             }
-            if !terminal {
-                Err(Error::provider("Anthropic stream ended without message_stop".into()))?;
+            if !thinking_blocks.is_empty() {
+                yield ModelEvent::ProviderReplayState(crate::model::ProviderReplayState {
+                    provider_kind: "anthropic".into(),
+                    value: json!({"blocks": thinking_blocks.into_values().collect::<Vec<_>>()}),
+                });
             }
+            if let Some(usage) = final_usage { yield ModelEvent::Usage(usage); }
+            yield ModelEvent::Done(finish);
         })
     }
 }
@@ -279,7 +259,7 @@ fn close_anthropic_block(
     kind: &str,
     thinking_text: &mut std::collections::HashMap<usize, String>,
     thinking_signatures: &mut std::collections::HashMap<usize, String>,
-    thinking_blocks: &mut Vec<Value>,
+    thinking_blocks: &mut std::collections::BTreeMap<usize, Value>,
 ) -> Vec<ModelEvent> {
     match kind {
         "text" => vec![ModelEvent::TextEnd],
@@ -287,17 +267,73 @@ fn close_anthropic_block(
             let thinking = thinking_text.remove(&index).unwrap_or_default();
             let signature = thinking_signatures.remove(&index).unwrap_or_default();
             if !signature.is_empty() {
-                thinking_blocks.push(json!({
-                    "type": "thinking",
-                    "thinking": thinking,
-                    "signature": signature,
-                }));
+                thinking_blocks.insert(
+                    index,
+                    json!({
+                        "type": "thinking",
+                        "thinking": thinking,
+                        "signature": signature,
+                    }),
+                );
             }
             vec![ModelEvent::ThinkingEnd]
         }
         "tool_use" => vec![ModelEvent::ToolCallEnd { index }],
         _ => Vec::new(),
     }
+}
+
+pub(super) fn apply_saved_thinking_budget(
+    model: &mut crate::model::ModelSpec,
+    saved_budget: Option<u64>,
+    config: &ProviderConfig,
+) -> Result<()> {
+    let Some(budget) = saved_budget else {
+        return Ok(());
+    };
+    match model.extra_params.get("thinking") {
+        Some(thinking)
+            if thinking.get("type").and_then(Value::as_str) == Some("enabled")
+                && thinking.get("budget_tokens").is_none() => {}
+        None if matches!(
+            model.model_id.as_str(),
+            "claude-haiku-4-5"
+                | "claude-haiku-4-5-20251001"
+                | "claude-sonnet-4-5"
+                | "claude-sonnet-4-5-20250929"
+                | "claude-opus-4-5"
+                | "claude-opus-4-5-20251101"
+                | "claude-sonnet-4-6"
+                | "claude-opus-4-6"
+                | "claude-mythos-preview"
+        ) => {}
+        _ => return Ok(()),
+    }
+    let max_tokens = model
+        .extra_params
+        .get("max_tokens")
+        .and_then(Value::as_u64)
+        .or(model.max_output_tokens)
+        .or(config.max_output_tokens)
+        .unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS);
+    let interleaved = config
+        .custom_headers
+        .get_all("anthropic-beta")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(','))
+        .any(|value| value.trim() == "interleaved-thinking-2025-05-14");
+    if budget < 1024 || (!interleaved && budget >= max_tokens) {
+        return Err(Error::Config(
+            "Anthropic thinking budget must be at least 1024 tokens and below max_tokens unless interleaved thinking is enabled".into(),
+        ));
+    }
+    if let Some(thinking) = model.extra_params.get_mut("thinking") {
+        thinking["budget_tokens"] = json!(budget);
+    } else {
+        model.extra_params["thinking"] = json!({"type":"enabled", "budget_tokens":budget});
+    }
+    Ok(())
 }
 
 fn apply_model(body: &mut Value, model: &crate::model::ModelSpec) -> Result<()> {
@@ -310,20 +346,27 @@ fn apply_model(body: &mut Value, model: &crate::model::ModelSpec) -> Result<()> 
             json!({"type":"adaptive", "display":"summarized"}),
         );
     }
-    if let Some(effort) = &model.reasoning.effort {
-        object.insert("output_config".into(), json!({"effort":effort}));
+    if model
+        .extra_params
+        .pointer("/thinking/type")
+        .and_then(Value::as_str)
+        != Some("enabled")
+    {
+        if let Some(effort) = &model.reasoning.effort {
+            object.insert("output_config".into(), json!({"effort":effort}));
+        }
     }
     Ok(())
 }
 
 fn merge_usage(total: &mut Usage, update: Usage) {
     merge_usage_field(&mut total.input_tokens, update.input_tokens);
-    merge_usage_field(&mut total.context_input_tokens, update.context_input_tokens);
     merge_usage_field(&mut total.output_tokens, update.output_tokens);
     merge_usage_field(&mut total.total_tokens, update.total_tokens);
     merge_usage_field(&mut total.cache_read_tokens, update.cache_read_tokens);
     merge_usage_field(&mut total.cache_write_tokens, update.cache_write_tokens);
     merge_usage_field(&mut total.reasoning_tokens, update.reasoning_tokens);
+    total.context_input_tokens = anthropic_context_input(total);
     if let Some(request_tokens) = total
         .context_input_tokens
         .zip(total.output_tokens)
@@ -355,15 +398,15 @@ fn anthropic_messages(messages: &[ProjectedMessage]) -> Result<Vec<Value>> {
                 } else {
                     Value::Array(anthropic_parts(&Role::User, &result.provider_parts)?)
                 };
-                push_anthropic(
-                    &mut output,
-                    "user",
-                    vec![json!({
-                        "type": "tool_result",
-                        "tool_use_id": result.call_id,
-                        "content": content,
-                    })],
-                );
+                let mut block = json!({
+                    "type": "tool_result",
+                    "tool_use_id": result.call_id,
+                    "content": content,
+                });
+                if result.is_error {
+                    block["is_error"] = json!(true);
+                }
+                push_anthropic(&mut output, "user", vec![block]);
             }
             ProjectedContent::Assistant {
                 text,
@@ -450,11 +493,20 @@ fn push_anthropic(output: &mut Vec<Value>, role: &str, mut content: Vec<Value>) 
         .filter(|last| last.get("role").and_then(Value::as_str) == Some(role))
     {
         if let Some(existing) = last.get_mut("content").and_then(Value::as_array_mut) {
-            existing.append(&mut content);
+            if content.first().is_some_and(is_tool_result) {
+                let first_non_result = existing.partition_point(is_tool_result);
+                existing.splice(first_non_result..first_non_result, content);
+            } else {
+                existing.append(&mut content);
+            }
             return;
         }
     }
     output.push(json!({"role":role, "content":content}));
+}
+
+fn is_tool_result(block: &Value) -> bool {
+    block.get("type").and_then(Value::as_str) == Some("tool_result")
 }
 
 fn role_name(role: &Role) -> &'static str {
@@ -486,25 +538,239 @@ pub(crate) fn anthropic_usage(value: &Value) -> Usage {
     let cache_write_tokens = value
         .get("cache_creation_input_tokens")
         .and_then(Value::as_u64);
-    let context_input_tokens = input_tokens.map(|input| {
-        input
-            .saturating_add(cache_read_tokens.unwrap_or_default())
-            .saturating_add(cache_write_tokens.unwrap_or_default())
-    });
-    Usage {
+    let mut usage = Usage {
         input_tokens,
-        context_input_tokens,
+        context_input_tokens: None,
         output_tokens: value.get("output_tokens").and_then(Value::as_u64),
         total_tokens: value.get("total_tokens").and_then(Value::as_u64),
         cache_read_tokens,
         cache_write_tokens,
-        reasoning_tokens: None,
-    }
+        reasoning_tokens: value
+            .pointer("/output_tokens_details/thinking_tokens")
+            .and_then(Value::as_u64),
+    };
+    usage.context_input_tokens = anthropic_context_input(&usage);
+    usage
+}
+
+fn anthropic_context_input(usage: &Usage) -> Option<u64> {
+    usage.input_tokens.map(|input| {
+        input
+            .saturating_add(usage.cache_read_tokens.unwrap_or_default())
+            .saturating_add(usage.cache_write_tokens.unwrap_or_default())
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        config::ProviderKind,
+        model::{ModelSpec, ToolCallContent, ToolResultContent},
+        provider::tests::{collect_sse, invocation, sse_events},
+    };
+
+    #[test]
+    fn saved_thinking_budget_is_used_only_for_fixed_mode() {
+        let config = ProviderConfig {
+            kind: ProviderKind::Anthropic,
+            request_url: String::new(),
+            api_key: String::new(),
+            custom_headers: reqwest::header::HeaderMap::new(),
+            max_output_tokens: Some(4096),
+            request_timeout: std::time::Duration::from_secs(5),
+            allowed_body_fields: None,
+        };
+        for (model_id, extra, expected, expected_effort) in [
+            (
+                "claude-haiku-4-5-20251001",
+                json!({}),
+                json!({"type":"enabled", "budget_tokens":2048}),
+                Value::Null,
+            ),
+            (
+                "claude-opus-4-7",
+                json!({}),
+                json!({"type":"adaptive", "display":"summarized"}),
+                json!("high"),
+            ),
+            (
+                "gateway/claude-haiku-4-5",
+                json!({}),
+                json!({"type":"adaptive", "display":"summarized"}),
+                json!("high"),
+            ),
+            (
+                "gateway",
+                json!({"thinking":{"type":"enabled", "display":"omitted"}}),
+                json!({"type":"enabled", "budget_tokens":2048, "display":"omitted"}),
+                Value::Null,
+            ),
+            (
+                "gateway",
+                json!({"thinking":{"type":"enabled", "budget_tokens":3072}, "output_config":{"effort":"low"}}),
+                json!({"type":"enabled", "budget_tokens":3072}),
+                json!("low"),
+            ),
+            (
+                "claude-sonnet-4-6",
+                json!({"thinking":{"type":"adaptive"}}),
+                json!({"type":"adaptive"}),
+                json!("high"),
+            ),
+        ] {
+            let mut model = ModelSpec::new(model_id);
+            model.reasoning.enabled = true;
+            model.reasoning.effort = Some("high".into());
+            model.extra_params = extra;
+            apply_saved_thinking_budget(&mut model, Some(2048), &config).unwrap();
+            let mut body = json!({});
+            apply_model(&mut body, &model).unwrap();
+            merge_extra_params(&mut body, &model.extra_params).unwrap();
+            assert_eq!(body["thinking"], expected, "{model_id}");
+            assert_eq!(
+                body["output_config"]["effort"], expected_effort,
+                "{model_id}"
+            );
+        }
+        let mut model = ModelSpec::new("claude-sonnet-4-6");
+        assert!(apply_saved_thinking_budget(&mut model, Some(1023), &config).is_err());
+        assert!(apply_saved_thinking_budget(&mut model, Some(4096), &config).is_err());
+    }
+
+    #[tokio::test]
+    async fn message_stop_yields_once_and_signed_thinking_and_tool_results_replay() {
+        let body = sse_events(&[
+            (
+                "message_start",
+                json!({"message":{"usage":{"input_tokens":10,"output_tokens":0}}}),
+            ),
+            (
+                "content_block_start",
+                json!({"index":0,"content_block":{"type":"thinking","thinking":"initial ","signature":""}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"index":0,"delta":{"type":"thinking_delta","thinking":"thought"}}),
+            ),
+            (
+                "content_block_delta",
+                json!({"index":0,"delta":{"type":"signature_delta","signature":"opaque"}}),
+            ),
+            ("content_block_stop", json!({"index":0})),
+            (
+                "content_block_start",
+                json!({"index":1,"content_block":{"type":"redacted_thinking","data":"encrypted"}}),
+            ),
+            ("content_block_stop", json!({"index":1})),
+            (
+                "message_delta",
+                json!({"delta":{"stop_reason":"end_turn"},"usage":{"cache_read_input_tokens":20,"output_tokens":7,"output_tokens_details":{"thinking_tokens":3}}}),
+            ),
+            ("message_stop", json!({})),
+            ("message_stop", json!({})),
+        ]);
+        let (events, _) = collect_sse(
+            ProviderKind::Anthropic,
+            body,
+            invocation(ModelSpec::new("test")),
+        )
+        .await;
+        let events = events.into_iter().collect::<Result<Vec<_>>>().unwrap();
+        let blocks = json!([
+            {"type":"thinking","thinking":"initial thought","signature":"opaque"},
+            {"type":"redacted_thinking","data":"encrypted"}
+        ]);
+        let replay = crate::model::ProviderReplayState {
+            provider_kind: "anthropic".into(),
+            value: json!({"blocks":blocks}),
+        };
+        assert_eq!(
+            events,
+            [
+                ModelEvent::Start {
+                    model_call_id: "call-1".into()
+                },
+                ModelEvent::ThinkingStart,
+                ModelEvent::ThinkingDelta("initial ".into()),
+                ModelEvent::ThinkingDelta("thought".into()),
+                ModelEvent::ThinkingEnd,
+                ModelEvent::ProviderReplayState(replay.clone()),
+                ModelEvent::Usage(Usage {
+                    input_tokens: Some(10),
+                    context_input_tokens: Some(30),
+                    output_tokens: Some(7),
+                    total_tokens: Some(37),
+                    cache_read_tokens: Some(20),
+                    reasoning_tokens: Some(3),
+                    ..Usage::default()
+                }),
+                ModelEvent::Done(FinishReason::Stop),
+            ]
+        );
+
+        let mut invocation = invocation(ModelSpec::new("test"));
+        invocation.request.history = vec![
+            ProjectedMessage {
+                message_id: "assistant".into(),
+                role: Role::Assistant,
+                content: ProjectedContent::Assistant {
+                    text: String::new(),
+                    thinking: String::new(),
+                    replay_state: Some(replay),
+                    calls: ["tool-a", "tool-b"]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, call_id)| ToolCallContent {
+                            index,
+                            call_id: call_id.into(),
+                            name: "lookup".into(),
+                            arguments: json!({}),
+                        })
+                        .collect(),
+                },
+            },
+            ProjectedMessage {
+                message_id: "follow-up".into(),
+                role: Role::User,
+                content: ProjectedContent::Parts(vec![ContentPart::Text {
+                    text: "Continue".into(),
+                }]),
+            },
+        ];
+        invocation
+            .request
+            .history
+            .extend([("tool-a", false), ("tool-b", true)].into_iter().map(
+                |(call_id, is_error)| ProjectedMessage {
+                    message_id: call_id.into(),
+                    role: Role::Tool,
+                    content: ProjectedContent::ToolResult(ToolResultContent {
+                        call_id: call_id.into(),
+                        name: "lookup".into(),
+                        content: "result".into(),
+                        is_error,
+                        image: None,
+                        provider_parts: Vec::new(),
+                    }),
+                },
+            ));
+        let body = sse_events(&[("message_stop", json!({}))]);
+        let (events, request) = collect_sse(ProviderKind::Anthropic, body, invocation).await;
+        assert!(events.into_iter().all(|event| event.is_ok()));
+        let assistant = request["messages"][0]["content"].as_array().unwrap();
+        assert_eq!(&assistant[..2], blocks.as_array().unwrap());
+        let user = &request["messages"][1]["content"];
+        assert_eq!(
+            user[0],
+            json!({"type":"tool_result","tool_use_id":"tool-a","content":"result"})
+        );
+        assert_eq!(
+            user[1],
+            json!({"type":"tool_result","tool_use_id":"tool-b","content":"result","is_error":true})
+        );
+        assert_eq!(user[2]["text"], "Continue");
+    }
 
     #[test]
     fn cached_tokens_are_included_once_in_anthropic_context_input() {

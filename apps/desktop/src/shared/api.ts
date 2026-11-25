@@ -537,6 +537,24 @@ export const api = {
   cursorHarness: () => request<CursorHarnessStatus>("/harness/cursor/status"),
   initializeCursorCa: () => request<CursorHarnessStatus>("/harness/cursor/ca/initialize", { method: "POST" }),
   plugins: () => request<PluginDescriptor[]>("/plugins"),
+  pluginRuntime: () => request<PluginRuntimeStatus>("/plugins/runtime"),
+  initializePluginRuntime: () => request<PluginRuntimeStatus>("/plugins/runtime", { method: "POST" }),
+  cancelPluginRuntimeInitialization: () => request<PluginRuntimeStatus>("/plugins/runtime", { method: "DELETE" }),
+  pluginOAuthBegin: (pluginId: string, resourceType: string, methodId: string, signal: AbortSignal) => request<PluginOAuthBegin>(
+    `/plugins/${encodeURIComponent(pluginId)}/resources/${encodeURIComponent(resourceType)}/add/${encodeURIComponent(methodId)}/begin`, { method: "POST", signal },
+  ),
+  pluginOAuthPoll: (sessionId: string, signal: AbortSignal) => request<PluginOAuthPoll>(
+    `/plugins/oauth/${encodeURIComponent(sessionId)}/poll`, { method: "POST", signal },
+  ),
+  refreshPluginResource: (pluginId: string, resourceType: string, resourceId: string) => request<void>(
+    `/plugins/${encodeURIComponent(pluginId)}/resources/${encodeURIComponent(resourceType)}/${encodeURIComponent(resourceId)}/refresh`, { method: "POST" },
+  ),
+  syncPluginModels: (pluginId: string, providerId: string) => request<{ models: number }>(
+    `/plugins/${encodeURIComponent(pluginId)}/providers/${encodeURIComponent(providerId)}/models/sync`, { method: "POST" },
+  ),
+  setPluginModelEnabled: (pluginId: string, providerId: string, modelId: string, enabled: boolean) => request<void>(
+    `/plugins/${encodeURIComponent(pluginId)}/providers/${encodeURIComponent(providerId)}/models/enabled`, { method: "PUT", body: JSON.stringify({ modelId, enabled }) },
+  ),
   openCursorCaInstallTerminal: async (command: string) => {
     if (!packagedDesktop) throw new Error(t("请在桌面应用中打开终端安装 CA"));
     const { invoke } = await import("@tauri-apps/api/core");

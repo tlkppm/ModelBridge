@@ -24,7 +24,7 @@ use super::{
     worker::{PluginWorker, WorkerStreamItem},
 };
 use crate::{
-    model::ModelInvocation,
+    model::{ModelInvocation, ResponsesReplayScope},
     provider::ProviderStream,
     provider::{CallRecorder, ModelEvent},
     store::Store,
@@ -216,7 +216,7 @@ impl PluginRegistry {
             .models(plugin_id, provider_id)
             .await?
             .into_iter()
-            .find(|model| model.id == upstream_id)
+            .find(|model| model.id == upstream_id && model.enabled)
             .ok_or_else(|| Error::RunNotFound(format!("plugin model {model_id}")))?;
         Ok(PluginModelDescriptor::new(
             plugin_id,
@@ -237,7 +237,7 @@ impl PluginRegistry {
     /// 事件与内置 Provider 走同一管道。未来的负载均衡在这里换资源重试。
     pub fn stream_model(
         &self,
-        invocation: ModelInvocation,
+        mut invocation: ModelInvocation,
         cancellation: CancellationToken,
         recorder: CallRecorder,
     ) -> ProviderStream {
@@ -252,15 +252,23 @@ impl PluginRegistry {
             let provider = find_provider(&entry, &provider_id)?.clone();
             let stored = registry.inner.state.models(&plugin_id, &provider_id).await?
                 .into_iter()
-                .find(|model| model.id == upstream_id)
+                .find(|model| model.id == upstream_id && model.enabled)
                 .ok_or_else(|| Error::RunNotFound(format!("plugin model {model_id}")))?;
             let resource = match &provider.resource_type {
                 Some(resource_type) => Some((
                     resource_type.clone(),
-                    registry.select_resource(&plugin_id, resource_type).await?,
+                    registry.inner.state.select_resource(&plugin_id, resource_type).await?,
                 )),
                 None => None,
             };
+            let replay_scope = ResponsesReplayScope::new([
+                "plugin",
+                &plugin_id,
+                &provider_id,
+                &upstream_id,
+                resource.as_ref().map_or("", |(_, record)| record.id.as_str()),
+            ]);
+            replay_scope.restore(&mut invocation.request.history);
             let request = wire::llm_request(&invocation)?;
             let params = serde_json::json!({
                 "providerId": provider_id,
@@ -274,7 +282,11 @@ impl PluginRegistry {
             while let Some(item) = items.recv().await {
                 match item {
                     WorkerStreamItem::Event(event) => {
-                        yield wire::model_event(&event)?;
+                        let mut event = wire::model_event(&event)?;
+                        if let ModelEvent::ProviderReplayState(state) = &mut event {
+                            replay_scope.bind(state);
+                        }
+                        yield event;
                     }
                     WorkerStreamItem::Result(result) => {
                         let value = result?;
@@ -1100,13 +1112,12 @@ impl PluginRegistry {
             }
         }
         match &provider.resource_type {
-            Some(resource_type) => !self
+            Some(resource_type) => self
                 .inner
                 .state
-                .resources(plugin_id, resource_type)
+                .select_resource(plugin_id, resource_type)
                 .await
-                .unwrap_or_default()
-                .is_empty(),
+                .is_ok(),
             None => true,
         }
     }
@@ -1148,7 +1159,11 @@ impl PluginRegistry {
         let plugin_id = &entry.manifest.id;
         let resource = match &provider.resource_type {
             Some(resource_type) => {
-                let record = self.select_resource(plugin_id, resource_type).await?;
+                let record = self
+                    .inner
+                    .state
+                    .select_resource(plugin_id, resource_type)
+                    .await?;
                 Some(record.snapshot(resource_type))
             }
             None => None,
@@ -1184,27 +1199,6 @@ impl PluginRegistry {
             .replace_models(plugin_id, &provider.id, &models)
             .await?;
         Ok(models.len())
-    }
-
-    /// 第一版选择策略:按创建顺序取首个可用资源;冷却到期视为可用。
-    async fn select_resource(
-        &self,
-        plugin_id: &str,
-        resource_type: &str,
-    ) -> Result<ResourceRecord> {
-        let records = self.inner.state.resources(plugin_id, resource_type).await?;
-        if records.is_empty() {
-            return Err(Error::provider(format!(
-                "plugin '{plugin_id}' has no '{resource_type}' resource; add one first"
-            )));
-        }
-        let now = now_ms();
-        records
-            .iter()
-            .find(|record| record.state.is_ready(now))
-            .or_else(|| records.first())
-            .cloned()
-            .ok_or_else(|| Error::provider("no plugin resource is available".into()))
     }
 
     async fn find_record(

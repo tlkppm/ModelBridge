@@ -145,13 +145,13 @@ export function CursorModelEditor({ draft, modelOptions, discovering, onChange, 
     <CursorPresetChips type={draft.model.type} baseUrl={draft.model.base_url} onPick={applyPreset} />
     <div className={styles.grid}>
       <FormField label={t("模型类型")}><Select ariaLabel={t("模型类型")} value={draft.providerId} options={providerOptions} onChange={setProvider} /></FormField>
-      {draft.model.type === "openai" && <FormField label={t("请求协议")} hint={t("只决定请求与响应的格式，不会改变请求地址。")}> <Select ariaLabel={t("请求协议")} value={draft.model.openai_endpoint} options={[
+      {draft.model.type === "openai" && <FormField label={t("请求协议")} hint={draft.model.use_full_url ? t("切换协议会改变请求与响应格式，完整请求 URL 保持不变。") : t("切换协议会改变请求与响应格式，并切换服务器地址下的请求端点。")}> <Select ariaLabel={t("请求协议")} value={draft.model.openai_endpoint} options={[
         { value: "/v1/responses", label: "Responses API" },
         { value: "/v1/chat/completions", label: "Chat Completions API" },
       ]} onChange={(openai_endpoint) => setModel({ openai_endpoint })} /></FormField>}
 
       <div className={styles.urlField}>
-        <FormField label={draft.model.use_full_url ? t("完整请求 URL") : t("服务器地址")} hint={draft.model.use_full_url ? t("系统会原样使用此地址，不追加或修改请求路径。") : t("系统会根据请求协议自动追加标准端点路径。")}> <TextInput placeholder={requestUrlPlaceholder} value={draft.model.base_url} onChange={(event) => setModel({ base_url: event.target.value })} /></FormField>
+        <FormField label={draft.model.use_full_url ? t("完整请求 URL") : t("服务器地址")} hint={draft.model.use_full_url ? t("系统会原样使用此地址，不追加或修改请求路径。") : t("填写根地址或以版本结尾的地址（如 /v1），系统按协议补全端点路径。")}> <TextInput placeholder={requestUrlPlaceholder} value={draft.model.base_url} onChange={(event) => setModel({ base_url: event.target.value })} /></FormField>
         <Checkbox checked={draft.model.use_full_url} label={t("使用完整请求地址")} onChange={(use_full_url) => setModel({ use_full_url })} />
       </div>
       <FormField label="API Key" hint={t("访问模型服务所需的密钥。")}> <SecretTextInput placeholder="sk-xxxxxx" autoComplete="off" value={draft.model.api_key} onChange={(event) => setModel({ api_key: event.target.value })} /></FormField>
@@ -167,7 +167,7 @@ export function CursorModelEditor({ draft, modelOptions, discovering, onChange, 
       </> : <>
         <FormField label={t("最大输出 Token")} hint={t("留空时使用默认值。")}> <TextInput type="number" min={1} step={1} placeholder={t("留空使用默认值")} value={draft.model.anthropic_max_tokens ?? ""} onChange={(event) => setModel({ anthropic_max_tokens: numberValue(event.target.value) })} /></FormField>
         <FormField label={t("思考强度")}> <Select ariaLabel={t("思考强度")} value={draft.model.anthropic_thinking_effort ?? "xhigh"} options={effortOptions(false)} onChange={(anthropic_thinking_effort) => setModel({ anthropic_thinking_effort })} /></FormField>
-        <FormField label={t("思考预算 Token")} hint={t("留空时使用 adaptive thinking。")}> <TextInput type="number" min={1} step={1} placeholder={t("留空使用 adaptive thinking")} value={draft.model.thinking_budget_tokens ?? ""} onChange={(event) => setModel({ thinking_budget_tokens: numberValue(event.target.value) })} /></FormField>
+        <FormField label={t("思考预算 Token")} hint={t("此预算仅在模型支持固定思考预算，或启用 Anthropic 额外参数并设置 thinking.type=enabled 时适用。预算至少为 1024 Token，通常须小于最大输出 Token。额外参数中显式填写的预算优先。")}> <TextInput type="number" min={1} step={1} placeholder={t("留空使用默认值")} value={draft.model.thinking_budget_tokens ?? ""} onChange={(event) => setModel({ thinking_budget_tokens: numberValue(event.target.value) })} /></FormField>
       </>}
 
       <ToggleJsonField

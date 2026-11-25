@@ -1,7 +1,6 @@
 import type {
-  LlmContentPart,
   LlmMessage,
-  LlmRequest,
+  ModelUsage,
   ProviderInvokeInput,
   ProviderOutput,
   ProviderResult,
@@ -199,6 +198,31 @@ function sanitizeSchema(value: unknown): unknown {
   return clean;
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function mergeUsage(usage: Record<string, unknown>, previous: ModelUsage | null): ModelUsage {
+  return {
+    inputTokens: tokenCount(usage.promptTokenCount) ?? previous?.inputTokens ?? null,
+    outputTokens: tokenCount(usage.candidatesTokenCount) ?? previous?.outputTokens ?? null,
+    totalTokens: tokenCount(usage.totalTokenCount) ?? previous?.totalTokens ?? null,
+    cacheReadTokens: tokenCount(usage.cachedContentTokenCount) ?? previous?.cacheReadTokens ?? null,
+    cacheWriteTokens: null,
+    reasoningTokens: tokenCount(usage.thoughtsTokenCount) ?? previous?.reasoningTokens ?? null,
+  };
+}
+
 function convertToCloudCodeContents(
   instructions: string,
   messages: LlmMessage[],
@@ -208,8 +232,10 @@ function convertToCloudCodeContents(
 } {
   const rawContents: Array<{ role: string; parts: Array<Record<string, unknown>> }> = [];
   let systemText = instructions || "";
+  let callOrder = new Map<string, number>();
 
-  for (const msg of messages) {
+  for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
+    const msg = messages[messageIndex];
     if (msg.role === "system") {
       const txt = msg.content
         .map((p) => (p.type === "text" ? p.text : ""))
@@ -228,21 +254,23 @@ function convertToCloudCodeContents(
       }
 
       const replayVal = msg.replayState?.providerKind === "antigravity"
-        ? (msg.replayState.value as Record<string, unknown> | null)
+        ? record(msg.replayState.value)
         : null;
-      const sig = typeof replayVal?.thoughtSignature === "string"
-        ? replayVal.thoughtSignature
-        : null;
+      const toolSignatures = record(replayVal?.toolCallSignatures);
+      const legacySignature = text(replayVal?.thoughtSignature) ?? "skip_thought_signature_validator";
 
+      callOrder = new Map(msg.toolCalls.map((call, index) => [call.callId, index]));
       for (const call of msg.toolCalls) {
+        const signature = toolSignatures ? text(toolSignatures[call.callId]) : legacySignature;
         parts.push({
           functionCall: {
+            ...(call.callId ? { id: call.callId } : {}),
             name: call.name,
             args: typeof call.arguments === "object" && call.arguments !== null
               ? call.arguments
               : {},
           },
-          thoughtSignature: sig || "skip_thought_signature_validator",
+          ...(signature ? { thoughtSignature: signature } : {}),
         });
       }
 
@@ -250,18 +278,27 @@ function convertToCloudCodeContents(
         rawContents.push({ role: "model", parts });
       }
     } else if (msg.role === "tool") {
+      const results = [msg];
+      while (true) {
+        const next = messages[messageIndex + 1];
+        if (next?.role !== "tool") break;
+        results.push(next);
+        messageIndex++;
+      }
+      const resultOrder = (id: string) => callOrder.get(id) ?? Number.MAX_SAFE_INTEGER;
+      results.sort((left, right) => resultOrder(left.callId) - resultOrder(right.callId));
       rawContents.push({
         role: "user",
-        parts: [
-          {
-            functionResponse: {
-              name: msg.name || "function",
-              response: { result: msg.content },
-            },
+        parts: results.map((result) => ({
+          functionResponse: {
+            ...(result.callId ? { id: result.callId } : {}),
+            name: result.name || "function",
+            response: { result: result.content },
           },
-        ],
+        })),
       });
     } else if (msg.role === "user") {
+      callOrder.clear();
       const parts: Array<Record<string, unknown>> = [];
       for (const p of msg.content) {
         if (p.type === "text") {
@@ -398,200 +435,134 @@ async function streamCloudCode(
 
       let textStarted = false;
       let thinkingStarted = false;
-      let doneEmitted = false;
-      let hasTools = false;
       let toolIndex = 0;
       let lastThoughtSignature: string | null = null;
-      let finalUsage: {
-        inputTokens: number | null;
-        outputTokens: number | null;
-        totalTokens: number | null;
-        cacheReadTokens: number | null;
-      } | null = null;
+      const toolCallSignatures = new Map<string, string>();
+      let finalUsage: ModelUsage | null = null;
+      let finishReason: string | null = null;
+      let doneReason: "stop" | "length" | "tool-use" | null = null;
 
-      for await (const line of response.lines) {
-        if (!line.startsWith("data:")) continue;
-        const raw = line.slice(5).trim();
-        if (!raw || raw === "[DONE]") break;
-
-        let json: Record<string, unknown>;
-        try {
-          json = JSON.parse(raw) as Record<string, unknown>;
-        } catch {
-          continue;
-        }
-
-        const resp = (json.response as Record<string, unknown> | undefined) ?? json;
-        if (!resp) continue;
-
-        const usage = resp.usageMetadata as Record<string, number> | undefined;
-        if (usage) {
-          finalUsage = {
-            inputTokens: typeof usage.promptTokenCount === "number" ? usage.promptTokenCount : null,
-            outputTokens: typeof usage.candidatesTokenCount === "number"
-              ? usage.candidatesTokenCount
-              : null,
-            totalTokens: typeof usage.totalTokenCount === "number" ? usage.totalTokenCount : null,
-            cacheReadTokens: typeof usage.cachedContentTokenCount === "number"
-              ? usage.cachedContentTokenCount
-              : null,
-          };
-        }
-
-        const candidates = resp.candidates as Array<Record<string, unknown>> | undefined;
-        const candidate = candidates?.[0];
-        const content = candidate?.content as Record<string, unknown> | undefined;
-        const parts = content?.parts as Array<Record<string, unknown>> | undefined;
-
-        if (parts) {
-          for (const part of parts) {
-            const sig = typeof part.thoughtSignature === "string" ? part.thoughtSignature : null;
-            if (sig) {
-              lastThoughtSignature = sig;
-            }
-
-            const isThought = part.thought === true;
-            const textPart = typeof part.text === "string" ? part.text : null;
-
-            if (isThought && textPart) {
-              const cleanThought = textPart.replace(/<\/?think>/gi, "");
-              if (cleanThought) {
-                hasEmittedAnyChunk = true;
-                if (!thinkingStarted) {
-                  thinkingStarted = true;
-                  output.emit({ type: "thinking-start" });
-                }
-                output.emit({ type: "thinking-delta", text: cleanThought });
-              }
-            } else if (textPart) {
-              if (thinkingStarted) {
-                thinkingStarted = false;
-                output.emit({ type: "thinking-end" });
-              }
-              const cleanText = textPart.replace(/<\/?think>/gi, "");
-              if (cleanText) {
-                hasEmittedAnyChunk = true;
-                if (!textStarted) {
-                  textStarted = true;
-                  output.emit({ type: "text-start" });
-                }
-                output.emit({ type: "text-delta", text: cleanText });
-              }
-            }
-
-            const fnCall = part.functionCall as { name: string; args: unknown } | undefined;
-            if (fnCall) {
-              hasEmittedAnyChunk = true;
-              if (thinkingStarted) {
-                thinkingStarted = false;
-                output.emit({ type: "thinking-end" });
-              }
-              if (textStarted) {
-                textStarted = false;
-                output.emit({ type: "text-end" });
-              }
-              hasTools = true;
-              const currentIdx = toolIndex++;
-              const callId = `call_${Date.now()}_${currentIdx}`;
-              output.emit({
-                type: "tool-call-start",
-                index: currentIdx,
-                callId,
-                name: fnCall.name,
-              });
-              const argsStr = typeof fnCall.args === "string"
-                ? fnCall.args
-                : JSON.stringify(fnCall.args || {});
-              output.emit({
-                type: "tool-call-arguments-delta",
-                index: currentIdx,
-                delta: argsStr,
-              });
-              output.emit({
-                type: "tool-call-end",
-                index: currentIdx,
-              });
-            }
-          }
-        }
-
-        const finishReason = typeof candidate?.finishReason === "string"
-          ? candidate.finishReason
-          : null;
-        if (finishReason) {
-          if (thinkingStarted) {
-            thinkingStarted = false;
-            output.emit({ type: "thinking-end" });
-          }
-          if (textStarted) {
-            textStarted = false;
-            output.emit({ type: "text-end" });
-          }
-          if (lastThoughtSignature) {
-            output.emit({
-              type: "replay-state",
-              providerKind: "antigravity",
-              value: { thoughtSignature: lastThoughtSignature },
-            });
-            lastThoughtSignature = null;
-          }
-          if (finalUsage) {
-            output.emit({
-              type: "usage",
-              usage: {
-                inputTokens: finalUsage.inputTokens,
-                outputTokens: finalUsage.outputTokens,
-                totalTokens: finalUsage.totalTokens,
-                cacheReadTokens: finalUsage.cacheReadTokens,
-                cacheWriteTokens: null,
-                reasoningTokens: null,
-              },
-            });
-            finalUsage = null;
-          }
-          const isTool = finishReason === "STOP" &&
-            (hasTools || parts?.some((p) => p.functionCall));
-          output.emit({
-            type: "done",
-            reason: isTool ? "tool-use" : "stop",
-          });
-          doneEmitted = true;
-          break;
-        }
-      }
-
-      if (thinkingStarted) {
+      const closeThinking = () => {
+        if (!thinkingStarted) return;
+        thinkingStarted = false;
         output.emit({ type: "thinking-end" });
-      }
-      if (textStarted) {
+      };
+      const closeText = () => {
+        if (!textStarted) return;
+        textStarted = false;
         output.emit({ type: "text-end" });
+      };
+
+      try {
+        for await (const line of response.lines) {
+          if (!line.startsWith("data:")) continue;
+          const raw = line.slice(5).trim();
+          if (!raw) continue;
+          if (raw === "[DONE]") break;
+
+          let json: Record<string, unknown> | null;
+          try {
+            json = record(JSON.parse(raw));
+          } catch {
+            throw new Error("Cloud Code SSE returned invalid JSON");
+          }
+          if (!json) throw new Error("Cloud Code SSE returned an invalid event");
+          const resp = record(json.response) ?? json;
+          const usage = record(resp.usageMetadata);
+          if (usage) finalUsage = mergeUsage(usage, finalUsage);
+
+          const error = json.error ?? resp.error;
+          if (error !== null && error !== undefined) {
+            const details = record(error);
+            const message = text(error) ?? text(details?.message) ?? text(details?.status);
+            throw new Error(
+              message ? `Cloud Code stream error: ${message}` : "Cloud Code stream error",
+            );
+          }
+          const blockReason = text(record(resp.promptFeedback)?.blockReason);
+          if (blockReason && blockReason !== "BLOCK_REASON_UNSPECIFIED") {
+            throw new Error(`Cloud Code blocked the prompt: ${blockReason}`);
+          }
+          if (finishReason) continue;
+
+          const candidate = Array.isArray(resp.candidates) ? record(resp.candidates[0]) : null;
+          const parts = record(candidate?.content)?.parts;
+          if (Array.isArray(parts)) {
+            for (const rawPart of parts) {
+              const part = record(rawPart);
+              if (!part) continue;
+              const signature = text(part.thoughtSignature);
+              if (signature) lastThoughtSignature = signature;
+
+              const textPart = text(part.text);
+              if (part.thought === true && textPart) {
+                const cleanThought = textPart.replace(/<\/?think>/gi, "");
+                if (cleanThought) {
+                  hasEmittedAnyChunk = true;
+                  if (!thinkingStarted) {
+                    thinkingStarted = true;
+                    output.emit({ type: "thinking-start" });
+                  }
+                  output.emit({ type: "thinking-delta", text: cleanThought });
+                }
+              } else if (textPart) {
+                closeThinking();
+                const cleanText = textPart.replace(/<\/?think>/gi, "");
+                if (cleanText) {
+                  hasEmittedAnyChunk = true;
+                  if (!textStarted) {
+                    textStarted = true;
+                    output.emit({ type: "text-start" });
+                  }
+                  output.emit({ type: "text-delta", text: cleanText });
+                }
+              }
+
+              const fnCall = record(part.functionCall);
+              if (fnCall) {
+                const name = text(fnCall.name);
+                if (!name) throw new Error("Cloud Code tool call is missing name");
+                hasEmittedAnyChunk = true;
+                closeThinking();
+                closeText();
+                const index = toolIndex++;
+                const callId = text(fnCall.id) ?? `call_${crypto.randomUUID()}`;
+                if (signature) toolCallSignatures.set(callId, signature);
+                output.emit({ type: "tool-call-start", index, callId, name });
+                const delta = typeof fnCall.args === "string"
+                  ? fnCall.args
+                  : JSON.stringify(fnCall.args || {});
+                output.emit({ type: "tool-call-arguments-delta", index, delta });
+                output.emit({ type: "tool-call-end", index });
+              }
+            }
+          }
+
+          const reason = text(candidate?.finishReason);
+          if (reason !== "FINISH_REASON_UNSPECIFIED") finishReason = reason;
+        }
+
+        if (!finishReason) throw new Error("Cloud Code stream ended without finishReason");
+        if (finishReason !== "STOP" && finishReason !== "MAX_TOKENS") {
+          throw new Error(`Cloud Code generation ended with ${finishReason}`);
+        }
+        doneReason = finishReason === "MAX_TOKENS" ? "length" : toolIndex > 0 ? "tool-use" : "stop";
+      } finally {
+        closeThinking();
+        closeText();
+        if (doneReason === "stop" || doneReason === "tool-use") {
+          const value: JsonValue = toolCallSignatures.size > 0
+            ? { toolCallSignatures: Object.fromEntries(toolCallSignatures) }
+            : lastThoughtSignature
+            ? { thoughtSignature: lastThoughtSignature }
+            : null;
+          if (value) output.emit({ type: "replay-state", providerKind: "antigravity", value });
+        }
+        if (finalUsage && (doneReason || hasEmittedAnyChunk)) {
+          output.emit({ type: "usage", usage: finalUsage });
+        }
       }
-      if (lastThoughtSignature) {
-        output.emit({
-          type: "replay-state",
-          providerKind: "antigravity",
-          value: { thoughtSignature: lastThoughtSignature },
-        });
-      }
-      if (finalUsage) {
-        output.emit({
-          type: "usage",
-          usage: {
-            inputTokens: finalUsage.inputTokens,
-            outputTokens: finalUsage.outputTokens,
-            totalTokens: finalUsage.totalTokens,
-            cacheReadTokens: finalUsage.cacheReadTokens,
-            cacheWriteTokens: null,
-            reasoningTokens: null,
-          },
-        });
-      }
-      if (!doneEmitted) {
-        output.emit({
-          type: "done",
-          reason: hasTools ? "tool-use" : "stop",
-        });
-      }
+      output.emit({ type: "done", reason: doneReason });
       return;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));

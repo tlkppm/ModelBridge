@@ -63,10 +63,17 @@ fn map_sse_error(
     }
 }
 
-fn provider_event_error(label: &str, value: &serde_json::Value) -> Option<crate::Error> {
+fn provider_event_error(
+    label: &str,
+    event_kind: &str,
+    value: &serde_json::Value,
+) -> Option<crate::Error> {
     let kind = value.get("type").and_then(serde_json::Value::as_str);
     let direct_error = value.get("error").filter(|error| !error.is_null());
-    if !matches!(kind, Some("error" | "response.failed")) && direct_error.is_none() {
+    if !matches!(event_kind, "error" | "response.failed")
+        && !matches!(kind, Some("error" | "response.failed"))
+        && direct_error.is_none()
+    {
         return None;
     }
 
@@ -153,6 +160,89 @@ fn apply_openai_prompt_cache_key(body: &mut serde_json::Value, model_id: &str) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        config::{ProviderConfig, ProviderKind},
+        model::{ModelRequest, ModelSpec, PromptSpec},
+    };
+    use axum::{routing::post, Json, Router};
+    use futures_util::StreamExt;
+    use serde_json::Value;
+    use std::{sync::Arc, time::Duration};
+    use tokio::{sync::mpsc, task::JoinHandle};
+
+    pub(super) fn invocation(model: ModelSpec) -> ModelInvocation {
+        ModelInvocation {
+            call_id: "call-1".into(),
+            run_id: "run-1".into(),
+            conversation_id: "conversation-1".into(),
+            provider_call_index: 0,
+            request: ModelRequest {
+                prompt: PromptSpec {
+                    instructions: String::new(),
+                    tools: Vec::new(),
+                },
+                model,
+                history: Vec::new(),
+            },
+        }
+    }
+
+    pub(super) fn sse_events(events: &[(&str, Value)]) -> String {
+        events
+            .iter()
+            .map(|(kind, value)| format!("event: {kind}\ndata: {value}\n\n"))
+            .collect()
+    }
+
+    pub(super) async fn mock_provider(
+        kind: ProviderKind,
+        body: String,
+    ) -> (
+        Arc<dyn Provider>,
+        JoinHandle<()>,
+        mpsc::UnboundedReceiver<Value>,
+    ) {
+        let (requests, captured) = mpsc::unbounded_channel();
+        let app = Router::new().route(
+            "/",
+            post(move |Json(request): Json<Value>| {
+                let requests = requests.clone();
+                let body = body.clone();
+                async move {
+                    requests.send(request).unwrap();
+                    ([("content-type", "text/event-stream")], body)
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let provider = build_provider(&ProviderConfig {
+            kind,
+            request_url: format!("http://{addr}"),
+            api_key: "test".into(),
+            custom_headers: reqwest::header::HeaderMap::new(),
+            max_output_tokens: None,
+            request_timeout: Duration::from_secs(5),
+            allowed_body_fields: None,
+        })
+        .unwrap();
+        (provider, server, captured)
+    }
+
+    pub(super) async fn collect_sse(
+        kind: ProviderKind,
+        body: String,
+        invocation: ModelInvocation,
+    ) -> (Vec<Result<ModelEvent>>, Value) {
+        let (provider, server, mut captured) = mock_provider(kind, body).await;
+        let events = provider
+            .stream(invocation, CancellationToken::new())
+            .collect()
+            .await;
+        server.abort();
+        (events, captured.try_recv().unwrap())
+    }
 
     #[test]
     fn sse_transport_errors_are_not_relabelled_as_parse_errors() {
@@ -208,13 +298,15 @@ mod tests {
     fn successful_provider_events_are_not_errors() {
         assert!(provider_event_error(
             "OpenAI Responses",
+            "response.completed",
             &serde_json::json!({"type": "response.completed", "error": null})
         )
         .is_none());
     }
 
     fn assert_provider_error(label: &str, value: serde_json::Value, expected: &str) {
-        let Some(crate::Error::Provider(failure)) = provider_event_error(label, &value) else {
+        let Some(crate::Error::Provider(failure)) = provider_event_error(label, "message", &value)
+        else {
             panic!("expected provider error");
         };
         assert_eq!(failure.message, expected);

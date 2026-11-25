@@ -32,8 +32,8 @@ pub struct TransportRegistry {
 
 struct RegistryInner {
     local: Mutex<HashMap<String, LocalTransport>>,
-    next_local_generation: AtomicU64,
-    upstream: Mutex<HashMap<String, u64>>,
+    next_generation: AtomicU64,
+    upstream: Mutex<HashMap<String, UpstreamRoute>>,
     health: Mutex<HashMap<String, HealthTransport>>,
     route_changed: Notify,
     store: Store,
@@ -56,9 +56,22 @@ struct HealthTransport {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpstreamKind {
+    Agent,
+    Inference,
+    SpeechToText,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UpstreamRoute {
+    pub kind: UpstreamKind,
+    pub generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportRoute {
     Local,
-    Upstream(u64),
+    Upstream(UpstreamRoute),
     Health,
 }
 
@@ -122,7 +135,7 @@ impl TransportRegistry {
         Self {
             inner: Arc::new(RegistryInner {
                 local: Mutex::new(HashMap::new()),
-                next_local_generation: AtomicU64::new(1),
+                next_generation: AtomicU64::new(1),
                 upstream: Mutex::new(HashMap::new()),
                 health: Mutex::new(HashMap::new()),
                 route_changed: Notify::new(),
@@ -179,16 +192,18 @@ impl TransportRegistry {
                 return Ok(transport.handle.clone());
             }
         }
+        if self.upstream(request_id).await || self.health(request_id).await {
+            return Err(Error::Protocol(
+                "local Agent cannot reuse an active request_id".into(),
+            ));
+        }
         local.remove(request_id);
         let (commands, receiver) = mpsc::channel(128);
         let output = Arc::new(OutputHub::default());
         let trace = self.inner.traces.recorder(request_id);
         trace.resume();
         let handle = TransportHandle::new(request_id.into(), commands, output, trace);
-        let generation = self
-            .inner
-            .next_local_generation
-            .fetch_add(1, Ordering::Relaxed);
+        let generation = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
         local.insert(
             request_id.into(),
             LocalTransport {
@@ -229,17 +244,40 @@ impl TransportRegistry {
             .map(|transport| transport.handle.clone())
     }
 
-    pub async fn mark_upstream(&self, request_id: &str) -> u64 {
+    pub async fn mark_upstream(
+        &self,
+        request_id: &str,
+        kind: UpstreamKind,
+    ) -> Result<UpstreamRoute> {
+        let local = self.inner.local.lock().await;
         let mut upstream = self.inner.upstream.lock().await;
-        let generation = upstream.get(request_id).copied().unwrap_or_default() + 1;
-        upstream.insert(request_id.into(), generation);
-        drop(upstream);
+        let health = self.inner.health.lock().await;
+        if request_id.is_empty()
+            || local.contains_key(request_id)
+            || health.contains_key(request_id)
+            || upstream
+                .get(request_id)
+                .is_some_and(|route| route.kind != kind)
+        {
+            return Err(Error::Protocol(
+                "upstream stream cannot reuse this request_id".into(),
+            ));
+        }
+        let route = UpstreamRoute {
+            kind,
+            generation: self.inner.next_generation.fetch_add(1, Ordering::Relaxed),
+        };
+        upstream.insert(request_id.into(), route);
         self.inner.route_changed.notify_waiters();
-        generation
+        Ok(route)
     }
 
     pub async fn upstream(&self, request_id: &str) -> bool {
-        self.inner.upstream.lock().await.contains_key(request_id)
+        self.upstream_route(request_id).await.is_some()
+    }
+
+    pub async fn upstream_route(&self, request_id: &str) -> Option<UpstreamRoute> {
+        self.inner.upstream.lock().await.get(request_id).copied()
     }
 
     pub async fn open_health(
@@ -258,10 +296,7 @@ impl TransportRegistry {
                 "Health stream requires a new nonempty request_id".into(),
             ));
         }
-        let generation = self
-            .inner
-            .next_local_generation
-            .fetch_add(1, Ordering::Relaxed);
+        let generation = self.inner.next_generation.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = mpsc::unbounded_channel();
         health.insert(
             request_id.into(),
@@ -322,8 +357,8 @@ impl TransportRegistry {
             if self.inner.local.lock().await.contains_key(request_id) {
                 return TransportRoute::Local;
             }
-            if let Some(generation) = self.inner.upstream.lock().await.get(request_id).copied() {
-                return TransportRoute::Upstream(generation);
+            if let Some(route) = self.upstream_route(request_id).await {
+                return TransportRoute::Upstream(route);
             }
             if self.inner.health.lock().await.contains_key(request_id) {
                 return TransportRoute::Health;
@@ -332,11 +367,20 @@ impl TransportRegistry {
         }
     }
 
-    pub fn finish_upstream(&self, request_id: String, generation: u64) {
-        let registry = self.clone();
+    pub fn finish_upstream(&self, request_id: String, generation: u64, delay: std::time::Duration) {
+        let registry = Arc::downgrade(&self.inner);
         tokio::spawn(async move {
-            let mut upstream = registry.inner.upstream.lock().await;
-            if upstream.get(&request_id) == Some(&generation) {
+            if !delay.is_zero() {
+                tokio::time::sleep(delay).await;
+            }
+            let Some(registry) = registry.upgrade() else {
+                return;
+            };
+            let mut upstream = registry.upstream.lock().await;
+            if upstream
+                .get(&request_id)
+                .is_some_and(|route| route.generation == generation)
+            {
                 upstream.remove(&request_id);
             }
         });

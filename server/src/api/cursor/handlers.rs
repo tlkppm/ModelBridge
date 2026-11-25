@@ -23,7 +23,7 @@ use crate::{
             account, analytics, commit_message, compatibility, entitlement::FreeEntitlementCache,
             knowledge, model_catalog, server_config, tab,
         },
-        transport::{TransportParent, TransportRegistry},
+        transport::{TransportParent, TransportRegistry, TransportRoute, UpstreamKind},
     },
     Result,
 };
@@ -50,6 +50,14 @@ fn router_with_proxy(
         .route(
             "/aiserver.v1.InferenceService/RunInferenceSSE",
             post(upstream_bidi_sse_handler),
+        )
+        .route(
+            "/aiserver.v1.AiService/StreamSttSSE",
+            post(upstream_bidi_sse_handler),
+        )
+        .route(
+            "/aiserver.v1.AiService/StreamSttPoll",
+            post(stt_poll_handler),
         )
         .route(
             "/aiserver.v1.HealthService/StreamBidiSSE",
@@ -207,6 +215,11 @@ async fn run_sse_handler(
     tracing::Span::current().record("request_id", request.request_id.as_str());
     tracing::info!("Cursor diagnostic: waiting for RunSSE route");
     let route = registry.wait_route(&request.request_id).await;
+    if matches!(route, TransportRoute::Upstream(route) if route.kind != UpstreamKind::Agent) {
+        return Err(crate::Error::Protocol(
+            "Agent stream cannot reuse another service's request_id".into(),
+        ));
+    }
     let trace = registry.trace(&request.request_id);
     trace.resume();
     trace.request(
@@ -219,24 +232,25 @@ async fn run_sse_handler(
             tracing::info!(route = "local", "Cursor diagnostic: RunSSE route selected");
             run_sse::stream(&registry, &request.request_id).await
         }
-        crate::cursor::transport::TransportRoute::Upstream(generation) => {
+        TransportRoute::Upstream(route) => {
             tracing::info!(
                 route = "upstream",
                 "Cursor diagnostic: RunSSE route selected"
             );
-            let response = proxy::forward(
+            let guard =
+                run_sse::UpstreamRunGuard::new(registry, request.request_id, route.generation);
+            match proxy::forward(
                 Extension(proxy),
                 Request::from_parts(parts, Body::from(body)),
             )
-            .await?;
-            Ok(run_sse::upstream(
-                registry,
-                request.request_id,
-                generation,
-                response,
-                Some(trace),
-            )
-            .await)
+            .await
+            {
+                Ok(response) => Ok(run_sse::upstream(guard, response, Some(trace))),
+                Err(error) => {
+                    trace.finish(Some(&error.to_string()));
+                    Err(error)
+                }
+            }
         }
         crate::cursor::transport::TransportRoute::Health => Err(crate::Error::Protocol(
             "Agent stream cannot reuse a Health request_id".into(),
@@ -265,37 +279,51 @@ async fn upstream_bidi_sse_handler(
 ) -> Result<Response<Body>> {
     let (parts, body) = buffered(request).await?;
     let request: agent::BidiRequestId = connect::decode_unary(&body)?;
-    if request.request_id.is_empty() {
-        return Err(crate::Error::Protocol(
-            "upstream Bidi stream request_id is required".into(),
-        ));
-    }
     tracing::Span::current().record("request_id", request.request_id.as_str());
-    if registry.local(&request.request_id).await.is_some()
-        || registry.health(&request.request_id).await
-    {
-        return Err(crate::Error::Protocol(
-            "upstream Bidi stream cannot reuse a local request_id".into(),
-        ));
-    }
-    let generation = registry.mark_upstream(&request.request_id).await;
+    let kind = if parts.uri.path() == "/aiserver.v1.AiService/StreamSttSSE" {
+        UpstreamKind::SpeechToText
+    } else {
+        UpstreamKind::Inference
+    };
+    let route = registry.mark_upstream(&request.request_id, kind).await?;
+    let guard = run_sse::UpstreamRunGuard::new(registry, request.request_id, route.generation);
     tracing::info!(
         route = "upstream",
         "Cursor diagnostic: upstream Bidi stream route selected"
     );
-    let response = match proxy::forward(
+    let response = proxy::forward(
         Extension(proxy),
         Request::from_parts(parts, Body::from(body)),
     )
-    .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            registry.finish_upstream(request.request_id, generation);
-            return Err(error);
-        }
-    };
-    Ok(run_sse::upstream(registry, request.request_id, generation, response, None).await)
+    .await?;
+    Ok(run_sse::upstream(guard, response, None))
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct SttPollRequest {
+    #[prost(message, optional, tag = "1")]
+    request_id: Option<ai::BidiRequestId>,
+}
+
+async fn stt_poll_handler(
+    State(registry): State<TransportRegistry>,
+    Extension(proxy): Extension<CursorProxy>,
+    request: Request<Body>,
+) -> Result<Response<Body>> {
+    let (parts, body) = buffered(request).await?;
+    let request: SttPollRequest = connect::decode_unary(&body)?;
+    let request_id = request.request_id.unwrap_or_default().request_id;
+    tracing::Span::current().record("request_id", request_id.as_str());
+    let route = registry
+        .mark_upstream(&request_id, UpstreamKind::SpeechToText)
+        .await?;
+    let guard = run_sse::UpstreamRunGuard::new(registry, request_id, route.generation);
+    let response = proxy::forward(
+        Extension(proxy),
+        Request::from_parts(parts, Body::from(body)),
+    )
+    .await?;
+    Ok(run_sse::upstream_poll(guard, response))
 }
 
 async fn bidi_handler(
@@ -312,12 +340,16 @@ async fn bidi_handler(
         return Ok(append_response());
     }
     if registry.local(request_id).await.is_none() {
-        let upstream = registry.upstream(request_id).await;
-        if upstream || bidi::is_inference_run(&request) {
-            if !upstream {
-                registry.mark_upstream(request_id).await;
-            }
-            return forward_upstream_bidi(&registry, proxy, &request, parts, body).await;
+        if let Some(route) = registry.upstream_route(request_id).await {
+            return forward_upstream_bidi(&registry, route.kind, proxy, &request, parts, body)
+                .await;
+        }
+        if bidi::is_inference_run(&request) {
+            let route = registry
+                .mark_upstream(request_id, UpstreamKind::Inference)
+                .await?;
+            return forward_upstream_bidi(&registry, route.kind, proxy, &request, parts, body)
+                .await;
         }
     }
     let decoded = bidi::decode(&request);
@@ -336,8 +368,9 @@ async fn bidi_handler(
                 health_diagnostic::append(&registry, &request).await?;
                 return Ok(append_response());
             }
-            Ok(crate::cursor::transport::TransportRoute::Upstream(_)) => {
-                return forward_upstream_bidi(&registry, proxy, &request, parts, body).await;
+            Ok(TransportRoute::Upstream(route)) => {
+                return forward_upstream_bidi(&registry, route.kind, proxy, &request, parts, body)
+                    .await;
             }
             _ => {}
         }
@@ -370,19 +403,18 @@ async fn bidi_handler(
         }
     } else if registry.local(&decoded.request_id).await.is_some() {
         true
-    } else if registry.upstream(&decoded.request_id).await {
-        false
+    } else if let Some(route) = registry.upstream_route(&decoded.request_id).await {
+        return forward_upstream_bidi(&registry, route.kind, proxy, &request, parts, body).await;
     } else {
-        trace.resume();
-        trace.request(
-            "bidi_request",
-            body.clone(),
-            trace_outcome(trace_metadata, false, "missing_transport", None),
-        );
         return Err(crate::Error::Protocol(
             "first BidiAppend message must select a model".into(),
         ));
     };
+    if !local {
+        registry
+            .mark_upstream(&decoded.request_id, UpstreamKind::Agent)
+            .await?;
+    }
     if first_model.is_some() {
         trace.begin(
             conversation_id.as_deref(),
@@ -397,9 +429,6 @@ async fn bidi_handler(
         trace.resume();
     }
     if !local {
-        if first_model.is_some() {
-            registry.mark_upstream(&decoded.request_id).await;
-        }
         trace.request(
             "bidi_request",
             body.clone(),
@@ -461,6 +490,7 @@ fn append_response() -> Response<Body> {
 
 async fn forward_upstream_bidi(
     registry: &TransportRegistry,
+    kind: UpstreamKind,
     proxy: CursorProxy,
     request: &ai::BidiAppendRequest,
     parts: axum::http::request::Parts,
@@ -472,21 +502,23 @@ async fn forward_upstream_bidi(
         append_seqno = request.append_seqno,
         "Cursor diagnostic: forwarding upstream Bidi payload without Agent decoding"
     );
-    let trace = registry.trace(request_id);
-    trace.resume();
-    trace.request(
-        "bidi_request",
-        body.clone(),
-        trace_outcome(
-            serde_json::json!({
-                "append_seqno": request.append_seqno,
-                "message_type": "upstream_payload",
-            }),
-            true,
-            "upstream",
-            None,
-        ),
-    );
+    if kind != UpstreamKind::SpeechToText {
+        let trace = registry.trace(request_id);
+        trace.resume();
+        trace.request(
+            "bidi_request",
+            body.clone(),
+            trace_outcome(
+                serde_json::json!({
+                    "append_seqno": request.append_seqno,
+                    "message_type": "upstream_payload",
+                }),
+                true,
+                "upstream",
+                None,
+            ),
+        );
+    }
     proxy::forward(
         Extension(proxy),
         Request::from_parts(parts, Body::from(body)),

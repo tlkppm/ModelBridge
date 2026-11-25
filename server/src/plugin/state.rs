@@ -237,6 +237,32 @@ impl PluginStateStore {
         Ok(serde_json::from_value(value)?)
     }
 
+    /// 第一版选择策略:按创建顺序取首个可用资源;冷却到期视为可用。
+    pub(super) async fn select_resource(
+        &self,
+        plugin_id: &str,
+        resource_type: &str,
+    ) -> Result<ResourceRecord> {
+        let records = self.resources(plugin_id, resource_type).await?;
+        let now = now_ms();
+        if let Some(record) = records.iter().find(|record| record.state.is_ready(now)) {
+            return Ok(record.clone());
+        }
+        let message = if records.is_empty() {
+            format!("plugin '{plugin_id}' has no '{resource_type}' resource; add one first")
+        } else if records
+            .iter()
+            .any(|record| matches!(record.state, ResourceState::Cooling { .. }))
+        {
+            format!("plugin '{plugin_id}' has no account ready to use; check quota and retry time")
+        } else {
+            format!("plugin '{plugin_id}' has no valid account; sign in again")
+        };
+        let mut failure = crate::ProviderFailure::plain(message);
+        failure.retryable = false;
+        Err(Error::Provider(failure))
+    }
+
     pub async fn upsert_resources(
         &self,
         plugin_id: &str,
@@ -420,6 +446,83 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let data = PluginDataStore::for_test(root.path().join("data")).unwrap();
         (root, PluginStateStore::new(data))
+    }
+
+    #[tokio::test]
+    async fn selects_only_ready_or_expired_cooling_accounts() {
+        let (_root, store) = store();
+        let draft = |key: &str, state| ResourceDraft {
+            key: key.into(),
+            private_data: serde_json::Value::Null,
+            state: Some(state),
+        };
+        let assert_unavailable = |error, message: &str| {
+            let Error::Provider(failure) = error else {
+                panic!("expected account availability error");
+            };
+            assert!(!failure.retryable);
+            assert!(failure.message.contains(message));
+        };
+        let plugin = "dev.example";
+        let resource = "account";
+        assert_unavailable(
+            store.select_resource(plugin, resource).await.unwrap_err(),
+            "add one first",
+        );
+        store
+            .upsert_resources(
+                plugin,
+                resource,
+                vec![draft(
+                    "invalid",
+                    ResourceStateInput::Invalid { message: None },
+                )],
+            )
+            .await
+            .unwrap();
+        assert_unavailable(
+            store.select_resource(plugin, resource).await.unwrap_err(),
+            "sign in again",
+        );
+        store
+            .upsert_resources(
+                plugin,
+                resource,
+                vec![draft(
+                    "cooling",
+                    ResourceStateInput::Cooling {
+                        retry_at_ms: None,
+                        message: None,
+                    },
+                )],
+            )
+            .await
+            .unwrap();
+        assert_unavailable(
+            store.select_resource(plugin, resource).await.unwrap_err(),
+            "check quota",
+        );
+        store
+            .upsert_resources(
+                plugin,
+                resource,
+                vec![
+                    draft(
+                        "expired",
+                        ResourceStateInput::Cooling {
+                            retry_at_ms: Some(0),
+                            message: None,
+                        },
+                    ),
+                    draft("ready", ResourceStateInput::Ready),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            store.select_resource(plugin, resource).await.unwrap().key,
+            "expired"
+        );
     }
 
     #[tokio::test]

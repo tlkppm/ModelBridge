@@ -59,6 +59,7 @@ let snapshot: AppSnapshot = {
 };
 
 const listeners = new Set<() => void>();
+let pluginsRefreshId = 0;
 
 function update(patch: Partial<AppSnapshot>) {
   snapshot = { ...snapshot, ...patch };
@@ -84,7 +85,7 @@ export const appStore = {
   async refresh() {
     update({ busy: true, error: null });
     try {
-      const [models, calls, overview, settings, ports, pricing, cursorHarness, plugins] = await Promise.all([
+      const [models, calls, overview, settings, ports, pricing, cursorHarness] = await Promise.all([
         api.models(),
         api.calls(),
         api.overview(),
@@ -92,14 +93,20 @@ export const appStore = {
         api.ports(),
         api.pricingSettings(),
         api.cursorHarness(),
-        api.plugins(),
+        appStore.refreshPlugins(),
       ]);
-      update({ models, calls, overview, detailed: settings.detailed, ports, pricing, cursorHarness, plugins });
+      update({ models, calls, overview, detailed: settings.detailed, ports, pricing, cursorHarness });
     } catch (cause) {
       update({ error: cause instanceof Error ? cause.message : String(cause) });
     } finally {
       update({ busy: false });
     }
+  },
+
+  async refreshPlugins() {
+    const refreshId = ++pluginsRefreshId;
+    const plugins = await api.plugins();
+    if (refreshId === pluginsRefreshId) update({ plugins });
   },
 
   async deleteModel(modelHash: string) {

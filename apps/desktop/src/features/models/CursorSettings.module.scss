@@ -282,6 +282,42 @@
 .sortDragging {
   cursor: grabbing;
 }
+.accountEntries {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.accountSection {
+  display: grid;
+  gap: 8px;
+
+  > .modelRow:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  > span {
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+  }
+
+  > [role="alert"] {
+    color: var(--vscode-errorForeground);
+  }
+}
+.accountStatus {
+  flex: 1 1 160px;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+
+  span {
+    color: var(--vscode-descriptionForeground);
+    font-size: type.$font-size-xs;
+  }
+}
 .editor {
   display: flex;
   flex-direction: column;

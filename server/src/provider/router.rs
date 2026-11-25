@@ -2,12 +2,12 @@
 use std::{sync::Arc, time::Duration};
 
 use async_stream::try_stream;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{ProviderConfig, ProviderKind},
-    model::{ModelInvocation, ModelLatency, NewLlmCall, ProviderType},
+    model::{ModelInvocation, ModelLatency, NewLlmCall, ProviderType, ResponsesReplayScope},
     plugin::{PluginRegistry, ADAPTER_ID_PREFIX},
     store::Store,
     Error, Result,
@@ -88,8 +88,6 @@ impl Provider for ProviderRouter {
                             &invocation.conversation_id,
                         );
                     routed.request.model.model_id = model.model_id.clone();
-                    let recorder = start_recorder(&store, &invocation, &model.model_hash, &model.display_name, provider_type, &request_url, &model.model_id).await?;
-                    let guard = recorder.cancel_on_drop();
                     let config = ProviderConfig {
                         kind: provider_kind(provider_type),
                         request_url,
@@ -106,9 +104,43 @@ impl Provider for ProviderRouter {
                         request_timeout,
                         allowed_body_fields: None,
                     };
+                    if provider_type == ProviderType::Anthropic {
+                        super::anthropic::apply_saved_thinking_budget(
+                            &mut routed.request.model,
+                            model.thinking_budget_tokens,
+                            &config,
+                        )?;
+                    }
+                    let scope = (provider_type == ProviderType::OpenAiResponses).then(|| {
+                        let mut headers = config.custom_headers.iter().collect::<Vec<_>>();
+                        headers.sort_by(|(left, _), (right, _)| left.as_str().cmp(right.as_str()));
+                        ResponsesReplayScope::new(
+                            [
+                                b"http".as_slice(),
+                                config.request_url.as_bytes(),
+                                config.api_key.as_bytes(),
+                                model.model_id.as_bytes(),
+                            ]
+                                .into_iter()
+                                .chain(headers.into_iter().flat_map(|(name, value)| {
+                                    [name.as_str().as_bytes(), value.as_bytes()]
+                                })),
+                        )
+                    });
+                    if let Some(scope) = &scope {
+                        scope.restore(&mut routed.request.history);
+                    }
                     let client = clients.provider_client(request_timeout).await?;
+                    let recorder = start_recorder(&store, &invocation, &model.model_hash, &model.display_name, provider_type, &config.request_url, &model.model_id).await?;
+                    let guard = recorder.cancel_on_drop();
                     let provider = build_observed(&config, recorder.clone(), client)?;
-                    (recorder, guard, provider.stream(routed, cancellation.clone()))
+                    let stream = provider.stream(routed, cancellation.clone()).map_ok(move |mut event| {
+                        if let (Some(scope), super::ModelEvent::ProviderReplayState(state)) = (&scope, &mut event) {
+                            scope.bind(state);
+                        }
+                        event
+                    });
+                    (recorder, guard, Box::pin(stream))
                 };
 
             let stream_started = std::time::Instant::now();

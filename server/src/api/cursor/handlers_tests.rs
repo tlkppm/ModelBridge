@@ -170,7 +170,10 @@ async fn inference_first_append_is_forwarded_without_agent_decoding() {
 #[tokio::test]
 async fn registered_upstream_append_preserves_opaque_and_binary_payloads() {
     let (registry, mut upstream) = setup().await;
-    registry.mark_upstream("upstream-request").await;
+    registry
+        .mark_upstream("upstream-request", UpstreamKind::Inference)
+        .await
+        .unwrap();
     let mut messages = vec![append_wire("upstream-request", vec![0x0e], 1)];
     messages.push(
         ai::BidiAppendRequest {
@@ -320,6 +323,163 @@ async fn inference_stream_cannot_take_over_a_local_transport() {
     assert!(matches!(result, Err(crate::Error::Protocol(_))));
     assert!(upstream.requests.try_recv().is_err());
     assert!(!registry.upstream("local-request").await);
+    registry.shutdown().await;
+}
+
+#[tokio::test]
+async fn stt_stream_and_opaque_appends_are_forwarded_in_either_arrival_order() {
+    use tower::ServiceExt;
+
+    let (registry, mut upstream) = setup().await;
+    let directory = tempfile::tempdir().unwrap();
+    let gateway = router_with_proxy(
+        registry.clone(),
+        upstream.proxy.clone(),
+        knowledge::KnowledgeService::with_root(directory.path().join("rules")).unwrap(),
+    );
+    for (request_id, append_first) in [("stt-stream-first", false), ("stt-append-first", true)] {
+        let wire = binary_append_wire(request_id, vec![0x0a, 4, 0x0a, 2, b'e', b'n'], 0);
+        let append = gateway.clone().oneshot(append_request(wire.clone()));
+        tokio::pin!(append);
+        if append_first {
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(30), &mut append)
+                    .await
+                    .is_err()
+            );
+        }
+        let mut request = inference_stream_request(request_id);
+        *request.uri_mut() = "/aiserver.v1.AiService/StreamSttSSE".parse().unwrap();
+        let response = gateway.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            registry.upstream_route(request_id).await.unwrap().kind,
+            UpstreamKind::SpeechToText
+        );
+        let (path, request_body) = upstream.requests.recv().await.unwrap();
+        assert_eq!(path, "/aiserver.v1.AiService/StreamSttSSE");
+        assert_eq!(
+            connect::decode_unary::<ai::BidiRequestId>(&request_body)
+                .unwrap()
+                .request_id,
+            request_id
+        );
+        assert_eq!(append.await.unwrap().status(), StatusCode::ACCEPTED);
+        assert_eq!(upstream.requests.recv().await.unwrap().1.as_ref(), wire);
+        let conflict = gateway
+            .clone()
+            .oneshot(inference_stream_request(request_id))
+            .await
+            .unwrap();
+        assert_eq!(conflict.status(), StatusCode::BAD_REQUEST);
+        assert!(registry.get_or_create(request_id).await.is_err());
+        assert!(upstream.requests.try_recv().is_err());
+        if append_first {
+            drop(response);
+        } else {
+            assert_eq!(
+                to_bytes(response.into_body(), 1024).await.unwrap(),
+                "opaque-response"
+            );
+        }
+        wait_upstream_closed(&registry, request_id).await;
+    }
+    registry.shutdown().await;
+}
+
+#[tokio::test]
+async fn stt_poll_keeps_opaque_appends_routed_between_polls() {
+    use std::time::Duration;
+    use tower::ServiceExt;
+
+    let (registry, mut upstream) = setup().await;
+    let directory = tempfile::tempdir().unwrap();
+    let gateway = router_with_proxy(
+        registry.clone(),
+        upstream.proxy.clone(),
+        knowledge::KnowledgeService::with_root(directory.path().join("rules")).unwrap(),
+    );
+    let request_id = "stt-poll";
+    for seqno in 0..2 {
+        let mut wire = SttPollRequest {
+            request_id: Some(ai::BidiRequestId {
+                request_id: request_id.into(),
+            }),
+        }
+        .encode_to_vec();
+        if seqno == 0 {
+            wire.extend_from_slice(&[0x10, 1]);
+        }
+        let path = "/aiserver.v1.AiService/StreamSttPoll";
+        let request = Request::post(path)
+            .header(header::CONTENT_TYPE, "application/proto")
+            .body(Body::from(wire.clone()))
+            .unwrap();
+        let response = gateway.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            to_bytes(response.into_body(), 1024).await.unwrap(),
+            "opaque-response"
+        );
+        assert_eq!(
+            upstream.requests.recv().await.unwrap(),
+            (path.into(), Bytes::from(wire))
+        );
+        assert_eq!(
+            registry.upstream_route(request_id).await.unwrap().kind,
+            UpstreamKind::SpeechToText
+        );
+
+        let wire = append_wire(request_id, vec![0x12, 4, 0x0a, 2, 0, 0], seqno);
+        let response = gateway
+            .clone()
+            .oneshot(append_request(wire.clone()))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        assert_eq!(upstream.requests.recv().await.unwrap().1.as_ref(), wire);
+        assert!(registry.local(request_id).await.is_none());
+    }
+    tokio::time::timeout(Duration::from_secs(7), async {
+        while registry.upstream(request_id).await {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .unwrap();
+    registry.shutdown().await;
+}
+
+#[tokio::test]
+async fn failed_official_stream_connection_releases_its_request_id() {
+    let (registry, _upstream) = setup().await;
+    let proxy = CursorProxy::with_upstream(
+        NetworkClients::new(registry.store().clone()),
+        "invalid://unreachable".into(),
+    );
+    let request_id = "unreachable-agent";
+    registry
+        .mark_upstream(request_id, UpstreamKind::Agent)
+        .await
+        .unwrap();
+    let mut request = inference_stream_request(request_id);
+    *request.uri_mut() = "/agent.v1.AgentService/RunSSE".parse().unwrap();
+    assert!(
+        run_sse_handler(State(registry.clone()), Extension(proxy.clone()), request)
+            .await
+            .is_err()
+    );
+    wait_upstream_closed(&registry, request_id).await;
+
+    let request_id = "unreachable-stt";
+    let mut request = inference_stream_request(request_id);
+    *request.uri_mut() = "/aiserver.v1.AiService/StreamSttSSE".parse().unwrap();
+    assert!(
+        upstream_bidi_sse_handler(State(registry.clone()), Extension(proxy), request)
+            .await
+            .is_err()
+    );
+    wait_upstream_closed(&registry, request_id).await;
     registry.shutdown().await;
 }
 

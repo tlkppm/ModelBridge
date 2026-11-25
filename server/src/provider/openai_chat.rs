@@ -125,6 +125,7 @@ impl Provider for OpenAiChatProvider {
             loop {
                 loop_iteration += 1;
                 let event = tokio::select! {
+                    biased;
                     _ = cancellation.cancelled() => {
                         tracing::debug!(
                             iteration = loop_iteration,
@@ -150,13 +151,16 @@ impl Provider for OpenAiChatProvider {
                 })?;
                 if event.data == "[DONE]" { saw_done_marker = true; break; }
                 let value: Value = serde_json::from_str(&event.data)?;
-                if let Some(error) = provider_event_error("OpenAI Chat", &value) {
+                if let Some(error) = provider_event_error("OpenAI Chat", &event.event, &value) {
                     Err(error)?;
                 }
-                if let Some(usage) = value.get("usage").filter(|value| !value.is_null()) {
-                    final_usage = Some(openai_usage(usage));
+                if let Some(usage) = value.get("usage").map(openai_usage).filter(|usage| *usage != Usage::default()) {
+                    final_usage = Some(usage);
                 }
-                let Some(choice) = value.get("choices").and_then(Value::as_array).and_then(|values| values.first()) else { continue; };
+                if finish.is_some() { continue; }
+                let Some(choice) = value.get("choices").and_then(Value::as_array).and_then(|choices| {
+                    choices.iter().find(|choice| choice.get("index").and_then(Value::as_u64).unwrap_or_default() == 0)
+                }) else { continue; };
                 let delta = choice.get("delta").unwrap_or(&Value::Null);
                 if let Some(reasoning_delta) = delta.get("reasoning_content").or_else(|| delta.get("reasoning")).and_then(Value::as_str).filter(|text| !text.is_empty()) {
                     if !thinking_open { thinking_open = true; yield ModelEvent::ThinkingStart; }
@@ -439,6 +443,130 @@ pub(crate) fn openai_usage(value: &Value) -> Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        config::ProviderKind,
+        model::ModelSpec,
+        provider::tests::{collect_sse, invocation, mock_provider, sse_events},
+    };
+
+    #[tokio::test]
+    async fn chat_keeps_choice_zero_tool_fragments_and_one_usage_after_finish() {
+        let mut body = sse_events(&[
+            (
+                "message",
+                json!({"choices":[
+                    {"index":1,"delta":{"content":"other choice"},"finish_reason":"stop"},
+                    {"index":0,"delta":{"tool_calls":[
+                        {"index":1,"id":"call-b","function":{"name":"lookup","arguments":"{\"q\":"}},
+                        {"index":0,"id":"call-a","function":{"name":"lookup","arguments":"{\"q\":"}}
+                    ]}}
+                ]}),
+            ),
+            (
+                "message",
+                json!({"choices":[{"index":0,"delta":{"tool_calls":[
+                {"index":0,"function":{"arguments":"\"a\"}"}},
+                {"index":1,"function":{"arguments":"\"b\"}"}}
+            ]},"finish_reason":"tool_calls"}]}),
+            ),
+            (
+                "message",
+                json!({"choices":[{"index":0,"delta":{"content":"late choice"},"finish_reason":"length"}]}),
+            ),
+            (
+                "message",
+                json!({"choices":[],"usage":{"prompt_tokens":13,"completion_tokens":7,"total_tokens":20}}),
+            ),
+            ("message", json!({"choices":[],"usage":{}})),
+        ]);
+        body.push_str("data: [DONE]\n\ndata: [DONE]\n\n");
+        let (events, _) = collect_sse(
+            ProviderKind::OpenAiChat,
+            body,
+            invocation(ModelSpec::new("test")),
+        )
+        .await;
+        let events = events.into_iter().collect::<Result<Vec<_>>>().unwrap();
+        assert_eq!(
+            events,
+            [
+                ModelEvent::Start {
+                    model_call_id: "call-1".into()
+                },
+                ModelEvent::ToolCallStart {
+                    index: 1,
+                    call_id: "call-b".into(),
+                    name: "lookup".into()
+                },
+                ModelEvent::ToolCallArgumentsDelta {
+                    index: 1,
+                    delta: "{\"q\":".into()
+                },
+                ModelEvent::ToolCallStart {
+                    index: 0,
+                    call_id: "call-a".into(),
+                    name: "lookup".into()
+                },
+                ModelEvent::ToolCallArgumentsDelta {
+                    index: 0,
+                    delta: "{\"q\":".into()
+                },
+                ModelEvent::ToolCallArgumentsDelta {
+                    index: 0,
+                    delta: "\"a\"}".into()
+                },
+                ModelEvent::ToolCallArgumentsDelta {
+                    index: 1,
+                    delta: "\"b\"}".into()
+                },
+                ModelEvent::ToolCallEnd { index: 0 },
+                ModelEvent::ToolCallEnd { index: 1 },
+                ModelEvent::Usage(Usage {
+                    input_tokens: Some(13),
+                    context_input_tokens: Some(13),
+                    output_tokens: Some(7),
+                    total_tokens: Some(20),
+                    ..Usage::default()
+                }),
+                ModelEvent::Done(FinishReason::ToolUse),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_distinguishes_cancellation_and_done_without_usage() {
+        let body = sse_events(&[(
+            "message",
+            json!({"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}),
+        )]);
+        let (provider, server, _requests) = mock_provider(ProviderKind::OpenAiChat, body).await;
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let mut stream = provider.stream(invocation(ModelSpec::new("test")), cancellation.clone());
+        assert!(matches!(
+            stream.next().await.unwrap().unwrap(),
+            ModelEvent::Start { .. }
+        ));
+        cancellation.cancel();
+        assert!(stream.next().await.is_none());
+
+        let events = provider
+            .stream(
+                invocation(ModelSpec::new("test")),
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .collect::<Vec<_>>()
+            .await;
+        server.abort();
+        assert_eq!(
+            events.into_iter().collect::<Result<Vec<_>>>().unwrap(),
+            [
+                ModelEvent::Start {
+                    model_call_id: "call-1".into()
+                },
+                ModelEvent::Done(FinishReason::Stop),
+            ]
+        );
+    }
 
     #[test]
     fn observed_tool_calls_outrank_ordinary_stop_reasons() {

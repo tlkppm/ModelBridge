@@ -1,4 +1,6 @@
 //! Implements the OpenAI Responses provider adapter.
+use std::collections::BTreeMap;
+
 use async_stream::try_stream;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use eventsource_stream::Eventsource;
@@ -28,7 +30,7 @@ struct ResponseToolState {
     arguments: String,
     emitted_arguments: usize,
     started: bool,
-    ended: bool,
+    complete: bool,
 }
 
 enum ResponseToolArguments<'a> {
@@ -112,39 +114,45 @@ impl Provider for OpenAiResponsesProvider {
             let source = chunks.eventsource();
             futures_util::pin_mut!(source);
             let mut text_open = false;
-            let mut text = String::new();
+            let mut text = BTreeMap::<(usize, usize), String>::new();
             let mut thinking_open = false;
-            let mut tools = std::collections::BTreeMap::<usize, ResponseToolState>::new();
-            let mut reasoning_items = Vec::new();
-            let mut saw_tool = false;
+            let mut tools = BTreeMap::<usize, ResponseToolState>::new();
+            let mut reasoning_items = BTreeMap::new();
+            let mut output_indexes = BTreeMap::<String, usize>::new();
             let mut saw_completed_item = false;
-            let mut terminal = false;
             let mut hosted_image = false;
-            loop {
+            let terminal = loop {
                 let event = tokio::select! {
+                    biased;
                     _ = cancellation.cancelled() => { return; }
                     event = source.next() => event,
                 };
-                let Some(event) = event else { break };
+                let Some(event) = event else { break None };
                 let event = event.map_err(|error| map_sse_error("OpenAI Responses", error))?;
-                if event.data == "[DONE]" { break; }
+                if event.data == "[DONE]" { break None; }
                 let value: Value = serde_json::from_str(&event.data)?;
-                if let Some(error) = provider_event_error("OpenAI Responses", &value) {
+                let kind = value.get("type").and_then(Value::as_str).unwrap_or(&event.event);
+                if matches!(kind, "response.completed" | "response.incomplete" | "response.failed") || event.event == "response.failed" {
+                    if let Some(usage) = value.pointer("/response/usage").filter(|usage| usage.is_object()) {
+                        yield ModelEvent::Usage(responses_usage(usage));
+                    }
+                }
+                if let Some(error) = provider_event_error("OpenAI Responses", &event.event, &value) {
                     Err(error)?;
                 }
-                let kind = value.get("type").and_then(Value::as_str).unwrap_or(&event.event);
                 match kind {
                     "response.output_text.delta" => {
                         if thinking_open { thinking_open = false; yield ModelEvent::ThinkingEnd; }
                         if !text_open { text_open = true; yield ModelEvent::TextStart; }
                         if let Some(delta) = value.get("delta").and_then(Value::as_str) {
-                            text.push_str(delta);
+                            text.entry(response_text_index(&value)).or_default().push_str(delta);
                             yield ModelEvent::TextDelta(delta.into());
                         }
                     }
                     "response.output_text.done" => {
                         if let Some(final_text) = value.get("text").and_then(Value::as_str) {
-                            for event in reconcile_response_text(&mut text_open, &mut text, final_text) { yield event; }
+                            let streamed = text.entry(response_text_index(&value)).or_default();
+                            for event in reconcile_response_text(&mut text_open, streamed, final_text) { yield event; }
                         }
                         if text_open { text_open = false; yield ModelEvent::TextEnd; }
                     }
@@ -154,40 +162,32 @@ impl Provider for OpenAiResponsesProvider {
                     }
                     "response.reasoning_summary_text.done" | "response.reasoning_text.done"
                         if thinking_open => { thinking_open = false; yield ModelEvent::ThinkingEnd; }
-                    "response.output_item.added" => {
+                    "response.output_item.added" | "response.output_item.done" => {
+                        let done = kind == "response.output_item.done";
                         let item = value.get("item").unwrap_or(&Value::Null);
-                        if item.get("type").and_then(Value::as_str) == Some("image_generation_call") {
-                            hosted_image = true;
-                        }
-                        if item.get("type").and_then(Value::as_str) == Some("function_call") {
-                            let index = required_u64(&value, "output_index")? as usize;
-                            saw_tool = true;
-                            for event in update_response_tool(index, item, ResponseToolArguments::None, false, &mut tools)? { yield event; }
-                        }
-                    }
-                    "response.output_item.done" => {
-                        let item = value.get("item").unwrap_or(&Value::Null);
+                        let output_index = value.get("output_index").and_then(Value::as_u64).map(|index| {
+                            let index = index as usize;
+                            item.get("id").and_then(Value::as_str)
+                                .map_or(index, |id| *output_indexes.entry(id.into()).or_insert(index))
+                        });
                         match item.get("type").and_then(Value::as_str) {
-                            Some("reasoning") => {
+                            Some("image_generation_call") => hosted_image = true,
+                            Some("reasoning") if done => {
                                 if thinking_open { thinking_open = false; yield ModelEvent::ThinkingEnd; }
-                                reasoning_items.push(item.clone());
+                                let index = output_index.ok_or_else(missing_output_index)?;
+                                reasoning_items.insert(index, item.clone());
                             }
-                            Some("message") => {
-                                saw_completed_item = true;
-                                if let Some(final_text) = response_item_text(item) {
-                                    for event in reconcile_response_text(&mut text_open, &mut text, &final_text) { yield event; }
-                                }
+                            Some("message") if done => {
+                                saw_completed_item |= item.get("status").and_then(Value::as_str) != Some("incomplete");
+                                let index = output_index.unwrap_or_default();
+                                for event in reconcile_response_item_text(&mut text_open, &mut text, index, item) { yield event; }
                                 if text_open { text_open = false; yield ModelEvent::TextEnd; }
                             }
                             Some("function_call") => {
-                                saw_completed_item = true;
-                                let index = required_u64(&value, "output_index")? as usize;
-                                saw_tool = true;
-                                let arguments = item
-                                    .get("arguments")
-                                    .and_then(Value::as_str)
-                                    .map_or(ResponseToolArguments::None, ResponseToolArguments::Snapshot);
-                                for event in update_response_tool(index, item, arguments, true, &mut tools)? { yield event; }
+                                let index = output_index.ok_or_else(missing_output_index)?;
+                                let done = done && item.get("status").and_then(Value::as_str) != Some("incomplete");
+                                saw_completed_item |= done;
+                                for event in update_response_tool(index, item, response_arguments(item), done, &mut tools)? { yield event; }
                             }
                             _ => {}
                         }
@@ -195,110 +195,120 @@ impl Provider for OpenAiResponsesProvider {
                     "response.function_call_arguments.delta" => {
                         let index = required_u64(&value, "output_index")? as usize;
                         if let Some(delta) = value.get("delta").and_then(Value::as_str) {
-                            saw_tool = true;
                             for event in update_response_tool(index, &Value::Null, ResponseToolArguments::Delta(delta), false, &mut tools)? { yield event; }
                         }
                     }
                     "response.function_call_arguments.done" => {
                         let index = required_u64(&value, "output_index")? as usize;
-                        match value.get("arguments").and_then(Value::as_str) {
-                            Some("") => {
-                                for event in update_response_tool(
-                                    index,
-                                    &Value::Null,
-                                    ResponseToolArguments::None,
-                                    false,
-                                    &mut tools,
-                                )? { yield event; }
-                            }
-                            arguments => {
-                                let arguments = arguments.map_or(
-                                    ResponseToolArguments::None,
-                                    ResponseToolArguments::Snapshot,
-                                );
-                                for event in update_response_tool(index, &Value::Null, arguments, true, &mut tools)? { yield event; }
-                            }
-                        }
+                        let arguments = response_arguments(&value);
+                        let complete = matches!(arguments, ResponseToolArguments::Snapshot(_));
+                        for event in update_response_tool(index, &value, arguments, complete, &mut tools)? { yield event; }
                     }
                     kind if kind.starts_with("response.image_generation_call.") => {
                         hosted_image = true;
                     }
-                    "response.completed" => {
-                        if hosted_image {
-                            Err(Error::Provider(crate::ProviderFailure {
-                                message: "OpenAI Responses error: hosted image output is not accepted on the chat route".into(),
-                                status: None,
-                                error_type: Some("image_generation_user_error".into()),
-                                code: Some("invalid_value".into()),
-                                param: Some("image_generation".into()),
-                                retryable: false,
-                            }))?;
-                        }
-                        if let Some(usage) = value.pointer("/response/usage") { yield ModelEvent::Usage(responses_usage(usage)); }
+                    "response.completed" | "response.incomplete" => {
+                        let incomplete = kind == "response.incomplete";
                         if thinking_open { thinking_open = false; yield ModelEvent::ThinkingEnd; }
-                        if text_open { text_open = false; yield ModelEvent::TextEnd; }
-                        for (index, tool) in tools.iter_mut().filter(|(_, tool)| tool.started && !tool.ended) {
-                            tool.ended = true;
-                            yield ModelEvent::ToolCallEnd { index: *index };
+                        if let Some(output) = value.pointer("/response/output").and_then(Value::as_array) {
+                            for (position, item) in output.iter().enumerate() {
+                                let index = item.get("id").and_then(Value::as_str)
+                                    .and_then(|id| output_indexes.get(id)).copied().unwrap_or(position);
+                                match item.get("type").and_then(Value::as_str) {
+                                    Some("image_generation_call") => hosted_image = true,
+                                    Some("message") => {
+                                        for event in reconcile_response_item_text(&mut text_open, &mut text, index, item) { yield event; }
+                                    }
+                                    Some("reasoning") if !incomplete => {
+                                        if item.get("encrypted_content").is_some_and(|content| !content.is_null()) {
+                                            reasoning_items.insert(index, item.clone());
+                                        } else {
+                                            reasoning_items.entry(index).or_insert_with(|| item.clone());
+                                        }
+                                    }
+                                    Some("function_call") if !incomplete => {
+                                        let index = response_snapshot_tool_index(index, item, &tools);
+                                        for event in update_response_tool(index, item, response_arguments(item), true, &mut tools)? { yield event; }
+                                    }
+                                    _ => {}
+                                }
+                            }
                         }
-                        if tools.values().any(|tool| !tool.started) {
-                            Err(Error::provider("OpenAI Responses completed with incomplete tool metadata".into()))?;
-                        }
-                        terminal = true;
-                        if !reasoning_items.is_empty() {
-                            yield ModelEvent::ProviderReplayState(
-                                crate::model::ProviderReplayState {
-                                    provider_kind: "openai_responses".into(),
-                                    value: json!({"items": std::mem::take(&mut reasoning_items)}),
-                                },
-                            );
-                        }
-                        yield ModelEvent::Done(if saw_tool { FinishReason::ToolUse } else { FinishReason::Stop });
-                    }
-                    "response.incomplete" => {
-                        if thinking_open { thinking_open = false; yield ModelEvent::ThinkingEnd; }
-                        if text_open { text_open = false; yield ModelEvent::TextEnd; }
-                        for (index, tool) in tools.iter_mut().filter(|(_, tool)| tool.started && !tool.ended) {
-                            tool.ended = true;
-                            yield ModelEvent::ToolCallEnd { index: *index };
-                        }
-                        terminal = true;
-                        yield ModelEvent::Done(FinishReason::Length);
+                        break Some(if incomplete { FinishReason::Length } else { FinishReason::Stop });
                     }
                     _ => {}
                 }
+            };
+            if hosted_image {
+                Err(Error::Provider(crate::ProviderFailure {
+                    message: "OpenAI Responses error: hosted image output is not accepted on the chat route".into(),
+                    status: None,
+                    error_type: Some("image_generation_user_error".into()),
+                    code: Some("invalid_value".into()),
+                    param: Some("image_generation".into()),
+                    retryable: false,
+                }))?;
             }
-            if !terminal && saw_completed_item {
-                if thinking_open { yield ModelEvent::ThinkingEnd; }
-                if text_open { yield ModelEvent::TextEnd; }
-                if tools.values().any(|tool| !tool.ended) {
-                    Err(Error::provider("OpenAI Responses stream ended with an incomplete tool call".into()))?;
-                }
-                terminal = true;
-                if !reasoning_items.is_empty() {
-                    yield ModelEvent::ProviderReplayState(crate::model::ProviderReplayState {
-                        provider_kind: "openai_responses".into(),
-                        value: json!({"items": std::mem::take(&mut reasoning_items)}),
-                    });
-                }
-                yield ModelEvent::Done(if saw_tool { FinishReason::ToolUse } else { FinishReason::Stop });
-            }
-            if !terminal {
+            if terminal.is_none() && !saw_completed_item {
                 Err(Error::provider("OpenAI Responses stream ended without response.completed or response.incomplete".into()))?;
             }
+            if terminal != Some(FinishReason::Length)
+                && tools.values().any(|tool| !tool.started || (terminal.is_none() && !tool.complete))
+            {
+                Err(Error::provider("OpenAI Responses stream ended with an incomplete tool call".into()))?;
+            }
+            if thinking_open { yield ModelEvent::ThinkingEnd; }
+            if text_open { yield ModelEvent::TextEnd; }
+            for (index, tool) in &tools {
+                if tool.started { yield ModelEvent::ToolCallEnd { index: *index }; }
+            }
+            let finish = if terminal == Some(FinishReason::Length) { FinishReason::Length }
+                else if !tools.is_empty() { FinishReason::ToolUse }
+                else { FinishReason::Stop };
+            if finish != FinishReason::Length && !reasoning_items.is_empty() {
+                yield ModelEvent::ProviderReplayState(crate::model::ProviderReplayState {
+                    provider_kind: "openai_responses".into(),
+                    value: json!({"items": reasoning_items.into_values().collect::<Vec<_>>()}),
+                });
+            }
+            yield ModelEvent::Done(finish);
         })
     }
 }
 
-fn response_item_text(item: &Value) -> Option<String> {
-    let text = item
-        .get("content")?
-        .as_array()?
-        .iter()
-        .filter(|part| part.get("type").and_then(Value::as_str) == Some("output_text"))
-        .filter_map(|part| part.get("text").and_then(Value::as_str))
-        .collect::<String>();
-    Some(text)
+fn response_text_index(value: &Value) -> (usize, usize) {
+    (
+        value
+            .get("output_index")
+            .and_then(Value::as_u64)
+            .unwrap_or_default() as usize,
+        value
+            .get("content_index")
+            .and_then(Value::as_u64)
+            .unwrap_or_default() as usize,
+    )
+}
+
+fn reconcile_response_item_text(
+    open: &mut bool,
+    streamed: &mut BTreeMap<(usize, usize), String>,
+    output_index: usize,
+    item: &Value,
+) -> Vec<ModelEvent> {
+    let Some(content) = item.get("content").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut events = Vec::new();
+    for (content_index, part) in content.iter().enumerate() {
+        if part.get("type").and_then(Value::as_str) != Some("output_text") {
+            continue;
+        }
+        if let Some(text) = part.get("text").and_then(Value::as_str) {
+            let previous = streamed.entry((output_index, content_index)).or_default();
+            events.extend(reconcile_response_text(open, previous, text));
+        }
+    }
+    events
 }
 
 fn reconcile_response_text(
@@ -319,20 +329,62 @@ fn reconcile_response_text(
     events
 }
 
+fn response_snapshot_tool_index(
+    index: usize,
+    item: &Value,
+    tools: &BTreeMap<usize, ResponseToolState>,
+) -> usize {
+    let Some(call_id) = item
+        .get("call_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+    else {
+        return index;
+    };
+    if let Some((index, _)) = tools
+        .iter()
+        .find(|(_, tool)| tool.call_id.as_deref() == Some(call_id))
+    {
+        return *index;
+    }
+    if tools.get(&index).is_some_and(|tool| tool.call_id.is_some()) {
+        return (0..)
+            .find(|index| !tools.contains_key(index))
+            .unwrap_or(index);
+    }
+    index
+}
+
+fn response_arguments(item: &Value) -> ResponseToolArguments<'_> {
+    item.get("arguments")
+        .and_then(Value::as_str)
+        .filter(|arguments| !arguments.is_empty())
+        .map_or(ResponseToolArguments::None, ResponseToolArguments::Snapshot)
+}
+
 fn update_response_tool(
     index: usize,
     item: &Value,
     arguments: ResponseToolArguments<'_>,
-    done: bool,
-    tools: &mut std::collections::BTreeMap<usize, ResponseToolState>,
+    complete: bool,
+    tools: &mut BTreeMap<usize, ResponseToolState>,
 ) -> Result<Vec<ModelEvent>> {
     let tool = tools.entry(index).or_default();
-    if let Some(call_id) = item.get("call_id").and_then(Value::as_str) {
+    if let Some(call_id) = item
+        .get("call_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+    {
         tool.call_id.get_or_insert_with(|| call_id.into());
     }
-    if let Some(name) = item.get("name").and_then(Value::as_str) {
+    if let Some(name) = item
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+    {
         tool.name.get_or_insert_with(|| name.into());
     }
+    tool.complete |= complete;
     match arguments {
         ResponseToolArguments::None => {}
         ResponseToolArguments::Delta(delta) => tool.arguments.push_str(delta),
@@ -362,15 +414,6 @@ fn update_response_tool(
         let delta = tool.arguments[tool.emitted_arguments..].to_string();
         tool.emitted_arguments = tool.arguments.len();
         events.push(ModelEvent::ToolCallArgumentsDelta { index, delta });
-    }
-    if done && !tool.ended {
-        if !tool.started {
-            return Err(Error::provider(
-                "OpenAI Responses function call is missing call_id or name".into(),
-            ));
-        }
-        tool.ended = true;
-        events.push(ModelEvent::ToolCallEnd { index });
     }
     Ok(events)
 }
@@ -532,6 +575,10 @@ fn role_name(role: &Role) -> &'static str {
     }
 }
 
+fn missing_output_index() -> Error {
+    Error::provider("OpenAI Responses event is missing output_index".into())
+}
+
 fn required_u64(value: &Value, name: &str) -> Result<u64> {
     value
         .get(name)
@@ -559,7 +606,167 @@ pub(crate) fn responses_usage(value: &Value) -> Usage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ProviderReplayState;
+    use crate::{
+        config::ProviderKind,
+        model::{ModelSpec, ProviderReplayState, ToolResultContent},
+        provider::tests::{collect_sse, invocation, sse_events},
+    };
+
+    #[tokio::test]
+    async fn responses_merge_tool_deltas_and_final_output_once() {
+        let reasoning = json!({"type":"reasoning","id":"reasoning-1","summary":[],"encrypted_content":"opaque"});
+        let first_call = json!({"type":"function_call","id":"item-a","call_id":"call-a","name":"lookup","arguments":"{\"q\":\"a\"}"});
+        let second_call = json!({"type":"function_call","id":"item-b","call_id":"call-b","name":"lookup","arguments":"{\"q\":\"b\"}"});
+        let message = json!({"type":"message","content":[{"type":"output_text","text":"OK"}]});
+        let body = sse_events(&[
+            (
+                "response.output_item.done",
+                json!({"output_index":0,"item":reasoning}),
+            ),
+            (
+                "response.function_call_arguments.delta",
+                json!({"output_index":5,"delta":"{\"q\":"}),
+            ),
+            (
+                "response.function_call_arguments.done",
+                json!({"output_index":5,"arguments":"{\"q\":\"a\"}"}),
+            ),
+            (
+                "response.output_item.done",
+                json!({"output_index":5,"item":first_call}),
+            ),
+            (
+                "response.output_text.delta",
+                json!({"output_index":3,"content_index":0,"delta":"O"}),
+            ),
+            (
+                "response.completed",
+                json!({"response":{"output":[reasoning,first_call,second_call,message],"usage":{"input_tokens":9,"output_tokens":4,"total_tokens":13}}}),
+            ),
+            (
+                "response.completed",
+                json!({"response":{"usage":{"input_tokens":100}}}),
+            ),
+        ]);
+        let mut invocation = invocation(ModelSpec::new("test"));
+        invocation.request.history.push(ProjectedMessage {
+            message_id: "earlier-result".into(),
+            role: Role::Tool,
+            content: ProjectedContent::ToolResult(ToolResultContent {
+                call_id: "earlier-call".into(),
+                name: "lookup".into(),
+                content: "lookup failed".into(),
+                is_error: true,
+                image: None,
+                provider_parts: Vec::new(),
+            }),
+        });
+        let (events, request) = collect_sse(ProviderKind::OpenAiResponses, body, invocation).await;
+        let events = events.into_iter().collect::<Result<Vec<_>>>().unwrap();
+        assert_eq!(
+            request["input"][0],
+            json!({"type":"function_call_output","call_id":"earlier-call","output":"lookup failed"})
+        );
+        assert_eq!(
+            events,
+            [
+                ModelEvent::Start {
+                    model_call_id: "call-1".into()
+                },
+                ModelEvent::ToolCallStart {
+                    index: 5,
+                    call_id: "call-a".into(),
+                    name: "lookup".into()
+                },
+                ModelEvent::ToolCallArgumentsDelta {
+                    index: 5,
+                    delta: "{\"q\":\"a\"}".into()
+                },
+                ModelEvent::TextStart,
+                ModelEvent::TextDelta("O".into()),
+                ModelEvent::Usage(Usage {
+                    input_tokens: Some(9),
+                    context_input_tokens: Some(9),
+                    output_tokens: Some(4),
+                    total_tokens: Some(13),
+                    ..Usage::default()
+                }),
+                ModelEvent::ToolCallStart {
+                    index: 2,
+                    call_id: "call-b".into(),
+                    name: "lookup".into()
+                },
+                ModelEvent::ToolCallArgumentsDelta {
+                    index: 2,
+                    delta: "{\"q\":\"b\"}".into()
+                },
+                ModelEvent::TextDelta("K".into()),
+                ModelEvent::TextEnd,
+                ModelEvent::ToolCallEnd { index: 2 },
+                ModelEvent::ToolCallEnd { index: 5 },
+                ModelEvent::ProviderReplayState(ProviderReplayState {
+                    provider_kind: "openai_responses".into(),
+                    value: json!({"items":[reasoning]}),
+                }),
+                ModelEvent::Done(FinishReason::ToolUse),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn responses_keep_terminal_usage_and_distinguish_failure_from_incomplete() {
+        for (kind, terminal) in [
+            (
+                "response.incomplete",
+                json!({"response":{"usage":{"output_tokens":4},"incomplete_details":{"reason":"max_output_tokens"}}}),
+            ),
+            (
+                "response.failed",
+                json!({"response":{"usage":{"output_tokens":4},"error":{"code":"server_error","message":"generation failed"}}}),
+            ),
+        ] {
+            let body = sse_events(&[(kind, terminal)]);
+            let (events, _) = collect_sse(
+                ProviderKind::OpenAiResponses,
+                body,
+                invocation(ModelSpec::new("test")),
+            )
+            .await;
+            assert_eq!(events.len(), 3, "{kind}");
+            assert!(
+                matches!(&events[1], Ok(ModelEvent::Usage(usage)) if usage.output_tokens == Some(4)),
+                "{kind}"
+            );
+            if kind == "response.incomplete" {
+                assert!(matches!(
+                    &events[2],
+                    Ok(ModelEvent::Done(FinishReason::Length))
+                ));
+            } else {
+                assert!(matches!(&events[2], Err(Error::Provider(failure))
+                    if failure.message == "OpenAI Responses error: generation failed"
+                       && failure.code.as_deref() == Some("server_error")));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn responses_rejects_hosted_image_in_terminal_snapshot_on_chat_route() {
+        let body = sse_events(&[(
+            "response.completed",
+            json!({"response":{"output":[{"type":"image_generation_call","result":"image"}]}}),
+        )]);
+        let (events, _) = collect_sse(
+            ProviderKind::OpenAiResponses,
+            body,
+            invocation(ModelSpec::new("test")),
+        )
+        .await;
+        assert!(
+            matches!(events.as_slice(), [Ok(ModelEvent::Start { .. }), Err(Error::Provider(failure))]
+            if failure.error_type.as_deref() == Some("image_generation_user_error"))
+        );
+    }
 
     #[test]
     fn reasoning_replay_projects_response_items_to_valid_input_items() {

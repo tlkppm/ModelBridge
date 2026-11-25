@@ -246,7 +246,10 @@ async fn health_diagnostic_preserves_simulated_errors_instead_of_reporting_succe
 async fn health_diagnostic_does_not_take_over_agent_or_inference_transports() {
     let (registry, mut upstream, _directory, gateway) = setup_health().await;
     registry.get_or_create("agent-owned").await.unwrap();
-    registry.mark_upstream("inference-owned").await;
+    registry
+        .mark_upstream("inference-owned", UpstreamKind::Inference)
+        .await
+        .unwrap();
     for request_id in ["", "agent-owned", "inference-owned"] {
         let response = gateway
             .clone()

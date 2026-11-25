@@ -4,7 +4,10 @@ use axum::{
     http::{header, HeaderValue, Response, StatusCode},
 };
 use bytes::Bytes;
-use std::{convert::Infallible, time::Instant};
+use std::{
+    convert::Infallible,
+    time::{Duration, Instant},
+};
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 
@@ -146,10 +149,18 @@ impl Drop for LocalRunGuard {
     }
 }
 
-pub async fn upstream(
-    registry: TransportRegistry,
-    request_id: String,
-    generation: u64,
+pub(super) fn upstream_poll(
+    mut guard: UpstreamRunGuard,
+    response: Response<Body>,
+) -> Response<Body> {
+    if response.status().is_success() {
+        guard.release_delay = Duration::from_secs(5);
+    }
+    upstream(guard, response, None)
+}
+
+pub(super) fn upstream(
+    guard: UpstreamRunGuard,
     response: Response<Body>,
     trace: Option<CursorTraceRecorder>,
 ) -> Response<Body> {
@@ -157,11 +168,6 @@ pub async fn upstream(
     if let Some(trace) = &trace {
         trace.response_started(parts.status.as_u16());
     }
-    let guard = UpstreamRunGuard {
-        registry,
-        request_id,
-        generation,
-    };
     let stream = async_stream::stream! {
         let _guard = guard;
         let mut trace = TraceStreamSink::new(trace, "cursor_official");
@@ -241,15 +247,27 @@ impl Drop for TraceStreamSink {
     }
 }
 
-struct UpstreamRunGuard {
+pub(super) struct UpstreamRunGuard {
     registry: TransportRegistry,
     request_id: String,
     generation: u64,
+    release_delay: Duration,
+}
+
+impl UpstreamRunGuard {
+    pub(super) fn new(registry: TransportRegistry, request_id: String, generation: u64) -> Self {
+        Self {
+            registry,
+            request_id,
+            generation,
+            release_delay: Duration::ZERO,
+        }
+    }
 }
 
 impl Drop for UpstreamRunGuard {
     fn drop(&mut self) {
         self.registry
-            .finish_upstream(self.request_id.clone(), self.generation);
+            .finish_upstream(self.request_id.clone(), self.generation, self.release_delay);
     }
 }
