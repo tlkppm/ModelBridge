@@ -106,6 +106,7 @@ impl TransportHandle {
     }
 
     pub async fn disconnect(&self) {
+        self.disconnect.cancel();
         let _ = self.commands.send(TransportCommand::Disconnect).await;
     }
 

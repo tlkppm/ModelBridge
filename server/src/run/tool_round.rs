@@ -58,6 +58,7 @@ pub(super) async fn execute(
             checkpoint_id: checkpoint,
             tool_round_version: 0,
             cause: CommitCause::ToolRoundStarted(round_id.clone()),
+            background_completions: Vec::new(),
             barrier: CommitBarrier::None,
         }),
     )
@@ -121,6 +122,7 @@ pub(super) async fn execute(
                             call_id,
                             interrupted: false,
                         },
+                        background_completions: Vec::new(),
                         barrier,
                     }),
                 )
@@ -165,6 +167,7 @@ pub(super) async fn execute(
                                 call_id: call.call_id.clone(),
                                 interrupted: true,
                             },
+                            background_completions: Vec::new(),
                             barrier,
                         }),
                     )

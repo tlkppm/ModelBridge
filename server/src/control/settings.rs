@@ -8,9 +8,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::store::{
-    CommitPromptLocale, CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings,
-    ProxySettings, ProxySettingsInput, StatisticsStorage, StatisticsStorageScope, TabSettings,
-    TokenPricingSettings,
+    CommitPromptLocale, CommitSettings, CursorTtsSettings, DesktopSettings, ExternalApiSettings,
+    PortSettings, ProxySettings, ProxySettingsInput, StatisticsStorage, StatisticsStorageScope,
+    TabSettings, TokenPricingSettings,
 };
 
 use super::{ControlService, ObservabilitySettings};
@@ -48,6 +48,19 @@ pub async fn update_external_api(
     Json(settings): Json<ExternalApiSettings>,
 ) -> Result<Json<ExternalApiSettings>> {
     Ok(Json(service.set_external_api_settings(settings).await?))
+}
+
+pub async fn get_cursor_tts(
+    State(service): State<ControlService>,
+) -> Result<Json<CursorTtsSettings>> {
+    Ok(Json(service.cursor_tts_settings().await?))
+}
+
+pub async fn update_cursor_tts(
+    State(service): State<ControlService>,
+    Json(settings): Json<CursorTtsSettings>,
+) -> Result<Json<CursorTtsSettings>> {
+    Ok(Json(service.set_cursor_tts_settings(settings).await?))
 }
 
 pub async fn get_image_generation(

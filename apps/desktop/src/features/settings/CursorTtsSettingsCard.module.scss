@@ -1,0 +1,44 @@
+@use "../../styles/typography" as type;
+
+.content {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.description {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.description small,
+.hint {
+  color: var(--vscode-descriptionForeground);
+  font-size: type.$font-size-xs;
+}
+
+.value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--vscode-descriptionForeground);
+  text-align: right;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.error {
+  color: var(--vscode-errorForeground);
+  font-size: type.$font-size-xs;
+}

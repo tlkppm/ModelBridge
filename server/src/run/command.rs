@@ -2,7 +2,10 @@
 
 use tokio::sync::oneshot;
 
-use crate::model::{CanonicalMessage, ToolResult};
+use crate::{
+    cursor::protocol::proto::agent::v1::BackgroundTaskCompletion,
+    model::{CanonicalMessage, ToolResult},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CommandResult {
@@ -17,6 +20,7 @@ pub enum CommandResult {
 pub struct MessageBatch {
     pub event_id: String,
     pub messages: Vec<CanonicalMessage>,
+    pub background_completions: Vec<BackgroundTaskCompletion>,
     pub result: oneshot::Sender<CommandResult>,
 }
 

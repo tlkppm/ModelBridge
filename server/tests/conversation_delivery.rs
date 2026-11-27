@@ -38,16 +38,22 @@ async fn background_subagent_completion_starts_a_simulated_parent_turn() {
         PromptCompiler::new(assets),
     );
     let handle = registry.get_or_create("completion-request").await.unwrap();
+    let mut state = pb::ConversationStateStructure {
+        mode: Some(pb::AgentMode::Multitask as i32),
+        ..Default::default()
+    };
+    state.subagent_runs_by_parent_tool_call_id.insert(
+        "task-call".into(),
+        pb::SubagentRunState {
+            parent_tool_call_id: "task-call".into(),
+            subagent_id: Some("child-id".into()),
+            status: pb::SubagentRunStatus::Backgrounded as i32,
+            ..Default::default()
+        },
+    );
     let (checkpoint, blobs) = drive_completion(
         &handle,
-        completion_run(
-            "child-id",
-            "reusable-parent-run",
-            pb::ConversationStateStructure {
-                mode: Some(pb::AgentMode::Multitask as i32),
-                ..Default::default()
-            },
-        ),
+        completion_run("child-id", "reusable-parent-run", state),
     )
     .await;
 
@@ -79,6 +85,19 @@ async fn background_subagent_completion_starts_a_simulated_parent_turn() {
             == Some("background-completed:BACKGROUND_TASK_KIND_SUBAGENT:child-id:task-call")
             && matches!(&message.content, MessageContent::Parts { parts } if !parts.is_empty())
     }));
+    let subagent = checkpoint
+        .subagent_runs_by_parent_tool_call_id
+        .get("task-call")
+        .expect("completed subagent state");
+    assert_eq!(
+        subagent.status,
+        pb::SubagentRunStatus::Success as i32
+    );
+    assert!(subagent.completed_timestamp_ms.is_some());
+    assert_eq!(
+        subagent.completion_reason,
+        Some(pb::BackgroundTaskCompletionReason::TaskFinished as i32)
+    );
 
     let turn = pb::ConversationTurnStructure::decode(
         blobs

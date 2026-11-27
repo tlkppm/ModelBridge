@@ -24,6 +24,7 @@ pub(super) const SHELL_FOLLOW_UP: &str = concat!(
 pub(super) struct Projection {
     pub context: String,
     pub turn_user: pb::UserMessage,
+    pub background_completions: Vec<pb::BackgroundTaskCompletion>,
 }
 
 pub(super) fn project(
@@ -37,6 +38,7 @@ pub(super) fn project(
     }
 
     let mut completions = BTreeMap::new();
+    let mut background_completions = Vec::new();
     let mut has_shell = false;
     let mut has_subagent = false;
     for completion in &action.completions {
@@ -66,6 +68,7 @@ pub(super) fn project(
                 "background task completion requires task_id and title".into(),
             ));
         }
+        background_completions.push(completion.clone());
         let agent_id = match kind {
             pb::BackgroundTaskKind::Shell => {
                 has_shell = true;
@@ -138,6 +141,7 @@ pub(super) fn project(
             }),
             ..Default::default()
         },
+        background_completions,
     })
 }
 

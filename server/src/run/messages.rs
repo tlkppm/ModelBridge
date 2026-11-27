@@ -23,15 +23,29 @@ pub(super) async fn append_batches(
 ) -> Result<(CheckpointId, bool), RunOutcome> {
     let mut inserted_any = false;
     for batch in batches {
+        let MessageBatch {
+            messages,
+            background_completions,
+            result,
+            ..
+        } = batch;
         let mut batch_inserted = false;
-        for message in batch.messages {
-            let (next, inserted) =
-                append_one(store, prepared, client, cancellation, checkpoint, message).await?;
+        for message in messages {
+            let (next, inserted) = append_one(
+                store,
+                prepared,
+                client,
+                cancellation,
+                checkpoint,
+                message,
+                &background_completions,
+            )
+            .await?;
             checkpoint = next;
             inserted_any |= inserted;
             batch_inserted |= inserted;
         }
-        let _ = batch.result.send(if batch_inserted {
+        let _ = result.send(if batch_inserted {
             CommandResult::Applied
         } else {
             CommandResult::Duplicate
@@ -64,6 +78,7 @@ async fn append_one(
     cancellation: &CancellationToken,
     checkpoint: CheckpointId,
     message: CanonicalMessage,
+    background_completions: &[crate::cursor::protocol::proto::agent::v1::BackgroundTaskCompletion],
 ) -> Result<(CheckpointId, bool), RunOutcome> {
     let event_id = message.runtime_event_id.clone().ok_or_else(|| {
         RunOutcome::Failed(RunFailure::Protocol(
@@ -79,7 +94,7 @@ async fn append_one(
         )
         .await
         .map_err(|error| RunOutcome::Failed(error.into()))?;
-    if !inserted {
+    if !inserted && background_completions.is_empty() {
         return Ok((checkpoint, false));
     }
     let (barrier, ready) = CommitBarrier::before_continue();
@@ -89,11 +104,12 @@ async fn append_one(
             checkpoint_id: checkpoint,
             tool_round_version: 0,
             cause: CommitCause::RuntimeEvent { event_id },
+            background_completions: background_completions.to_vec(),
             barrier,
         }),
     )
     .await
     .map_err(|_| client_failure())?;
     wait_for_state_ready(ready, cancellation).await?;
-    Ok((checkpoint, true))
+    Ok((checkpoint, inserted))
 }

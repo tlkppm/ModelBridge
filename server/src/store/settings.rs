@@ -15,6 +15,7 @@ const CURSOR_TAKEOVER_ENABLED_KEY: &str = "cursor_takeover_enabled";
 const PRICING_SETTINGS_KEY: &str = "token_pricing";
 const EXTERNAL_API_SETTINGS_KEY: &str = "external_api";
 const IMAGE_GENERATION_SETTINGS_KEY: &str = "image_generation";
+const CURSOR_TTS_SETTINGS_KEY: &str = "cursor_tts";
 
 /// Embedded default system prompts for commit message generation.
 pub const DEFAULT_COMMIT_PROMPT_ZH_CN: &str = include_str!("../../prompt/cursor/commit/zh-CN.md");
@@ -49,6 +50,12 @@ pub enum ImageGenerationKeyAction {
     Keep,
     Replace,
     Clear,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub struct CursorTtsSettings {
+    #[serde(default)]
+    pub service_url: String,
 }
 
 #[derive(Clone, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -330,6 +337,60 @@ impl Store {
             .bind(now_ms())
             .execute(&self.pool)
             .await?;
+        Ok(settings)
+    }
+
+    pub async fn cursor_tts_settings(&self) -> Result<CursorTtsSettings> {
+        let value = sqlx::query_scalar::<_, String>(
+            "SELECT value_json FROM service_settings WHERE setting_key = ?",
+        )
+        .bind(CURSOR_TTS_SETTINGS_KEY)
+        .fetch_optional(&self.pool)
+        .await?;
+        value
+            .map(|value| serde_json::from_str(&value).map_err(Into::into))
+            .unwrap_or_else(|| Ok(CursorTtsSettings::default()))
+    }
+
+    pub async fn set_cursor_tts_settings(
+        &self,
+        mut settings: CursorTtsSettings,
+    ) -> Result<CursorTtsSettings> {
+        settings.service_url = settings
+            .service_url
+            .trim()
+            .trim_end_matches('/')
+            .to_owned();
+        if !settings.service_url.is_empty() {
+            let parsed = url::Url::parse(&settings.service_url).map_err(|error| {
+                crate::Error::Config(format!("invalid Cursor TTS service address: {error}"))
+            })?;
+            let host = parsed.host_str().unwrap_or_default();
+            let local_host = host == "localhost"
+                || host == "localhost.localdomain"
+                || host
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|address| address.is_loopback());
+            if !matches!(parsed.scheme(), "http" | "https")
+                || !local_host
+                || parsed.query().is_some()
+                || parsed.fragment().is_some()
+            {
+                return Err(crate::Error::Config(
+                    "Cursor TTS service address must use HTTP(S), target localhost, and omit query or fragment".into(),
+                ));
+            }
+        }
+        let value_json = serde_json::to_string(&settings)?;
+        let _write = self.writes.lock().await;
+        sqlx::query(
+            "INSERT INTO service_settings(setting_key, value_json, updated_at_ms) VALUES (?, ?, ?) ON CONFLICT(setting_key) DO UPDATE SET value_json = excluded.value_json, updated_at_ms = excluded.updated_at_ms",
+        )
+        .bind(CURSOR_TTS_SETTINGS_KEY)
+        .bind(value_json)
+        .bind(now_ms())
+        .execute(&self.pool)
+        .await?;
         Ok(settings)
     }
 
@@ -645,8 +706,9 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::{
-        read_proxy_settings, CommitPromptLocale, CommitSettings, ExternalApiSettings, ProxyMode,
-        ProxySettingsInput, ProxySettingsSecret, Store, TokenPricingSettings,
+        read_proxy_settings, CommitPromptLocale, CommitSettings, CursorTtsSettings,
+        ExternalApiSettings, ProxyMode, ProxySettingsInput, ProxySettingsSecret, Store,
+        TokenPricingSettings,
         DEFAULT_COMMIT_PROMPT_EN_US, DEFAULT_COMMIT_PROMPT_ZH_CN, PROXY_SETTINGS_KEY,
     };
 
@@ -820,5 +882,37 @@ mod tests {
                 .unwrap(),
             settings
         );
+    }
+
+    #[tokio::test]
+    async fn cursor_tts_settings_validate_local_urls_and_persist() {
+        let directory = tempfile::tempdir().unwrap();
+        let url = format!("sqlite://{}", directory.path().join("test.db").display());
+        let store = Store::connect(&url).await.unwrap();
+
+        assert_eq!(
+            store.cursor_tts_settings().await.unwrap(),
+            CursorTtsSettings::default()
+        );
+        let settings = store
+            .set_cursor_tts_settings(CursorTtsSettings {
+                service_url: " http://127.0.0.1:5000/ ".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(settings.service_url, "http://127.0.0.1:5000");
+        assert_eq!(store.cursor_tts_settings().await.unwrap(), settings);
+        for service_url in [
+            "https://example.com",
+            "ftp://127.0.0.1:5000",
+            "http://127.0.0.1:5000?mode=preview",
+        ] {
+            assert!(store
+                .set_cursor_tts_settings(CursorTtsSettings {
+                    service_url: service_url.into(),
+                })
+                .await
+                .is_err());
+        }
     }
 }

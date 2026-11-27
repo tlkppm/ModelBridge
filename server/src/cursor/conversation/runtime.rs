@@ -144,6 +144,11 @@ impl ConversationRuntime {
                         }
                     }
                 };
+                let command = if handle.disconnect_token().is_cancelled() {
+                    TransportCommand::Disconnect
+                } else {
+                    command
+                };
                 match command {
                     TransportCommand::Disconnect => {
                         handle.mark_disconnected();
@@ -675,6 +680,7 @@ fn spawn_run_request(
             context.dynamic_tools.keys().cloned().collect(),
             context.turn_user.clone(),
         );
+        checkpoint.record_background_completions(&context.background_completions);
         if context.background_completion {
             let event_id = prepared
                 .initial_messages
@@ -688,6 +694,7 @@ fn spawn_run_request(
                         event_id,
                         target_run_id: None,
                         messages: prepared.initial_messages.clone(),
+                        background_completions: context.background_completions.clone(),
                         delivery: MessageDelivery::InsertMessages,
                     },
                 )
@@ -736,6 +743,11 @@ fn spawn_run_request(
             }
         }
         let pending = registry.take_pending(&prepared.conversation_id).await;
+        for pending_messages in &pending {
+            checkpoint.record_background_completions(
+                &pending_messages.background_completions,
+            );
+        }
         if !pending.is_empty() {
             let mut messages = pending
                 .into_iter()

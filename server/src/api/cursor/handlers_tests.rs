@@ -567,3 +567,69 @@ async fn unknown_malformed_packet_is_rejected_without_upstream_fallback() {
     assert!(!registry.upstream("unknown-request").await);
     registry.shutdown().await;
 }
+
+#[test]
+fn incomplete_parent_headers_are_ignored_without_rejecting_the_request() {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-parent-request-id", HeaderValue::from_static("parent"));
+    assert_eq!(parent_headers(&headers).unwrap(), None);
+
+    headers.clear();
+    headers.insert(
+        "x-parent-agent-tool-call-id",
+        HeaderValue::from_static("tool"),
+    );
+    assert_eq!(parent_headers(&headers).unwrap(), None);
+
+    headers.clear();
+    headers.insert("x-parent-request-id", HeaderValue::from_static(""));
+    headers.insert(
+        "x-parent-agent-tool-call-id",
+        HeaderValue::from_static("tool"),
+    );
+    assert_eq!(parent_headers(&headers).unwrap(), None);
+}
+
+#[test]
+fn complete_parent_headers_are_preserved() {
+    let mut headers = HeaderMap::new();
+    headers.insert("x-parent-request-id", HeaderValue::from_static("parent"));
+    headers.insert(
+        "x-parent-agent-tool-call-id",
+        HeaderValue::from_static("tool"),
+    );
+    assert_eq!(
+        parent_headers(&headers).unwrap(),
+        Some(TransportParent {
+            request_id: "parent".into(),
+            tool_call_id: "tool".into(),
+        })
+    );
+}
+
+#[tokio::test]
+async fn run_sse_registers_complete_parent_headers_on_local_transport() {
+    let (registry, upstream) = setup().await;
+    let handle = registry.get_or_create("run-sse-parent").await.unwrap();
+    let mut request = inference_stream_request("run-sse-parent");
+    request.headers_mut().insert(
+        "x-parent-request-id",
+        HeaderValue::from_static("parent-request"),
+    );
+    request.headers_mut().insert(
+        "x-parent-agent-tool-call-id",
+        HeaderValue::from_static("parent-tool"),
+    );
+    let response = run_sse_handler(State(registry.clone()), Extension(upstream.proxy), request)
+        .await
+        .unwrap();
+    assert_eq!(
+        handle.parent(),
+        Some(&TransportParent {
+            request_id: "parent-request".into(),
+            tool_call_id: "parent-tool".into(),
+        })
+    );
+    drop(response);
+    registry.shutdown().await;
+}

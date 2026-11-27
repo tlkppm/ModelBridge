@@ -4,6 +4,7 @@ import { PageContent } from "../../shell/layout/PageContent";
 import { LegacyModelImport } from "../models/LegacyModelImport";
 import { AppLifecycleSettingsCard } from "./AppLifecycleSettingsCard";
 import { CommitSettingsCard } from "./CommitSettingsCard";
+import { CursorTtsSettingsCard } from "./CursorTtsSettingsCard";
 import { ExternalApiSettingsCard } from "./ExternalApiSettingsCard";
 import { ImageGenerationSettingsCard } from "./ImageGenerationSettingsCard";
 import { PricingSettingsCard } from "./PricingSettingsCard";
@@ -227,6 +228,7 @@ export function SettingsPage() {
         </div>
       </TitledCard>
       <ExternalApiSettingsCard servicePort={ports.service_port} />
+      <CursorTtsSettingsCard />
       <ProxySettingsCard settings={outboundProxy} draft={proxyDraft} editing={editingProxy} saving={savingProxy} onDraftChange={setProxyDraft} onEdit={editProxy} onCancel={cancelProxyEdit} onSave={() => void saveProxy()} />
       <TabSettingsCard settings={tabSettings} draft={tabDraft} editing={editingTab} saving={savingTab} onDraftChange={setTabDraft} onEdit={editTab} onCancel={cancelTabEdit} onSave={() => void saveTab()} />
       <CommitSettingsCard />

@@ -174,6 +174,7 @@ fn is_local_path(path: &str) -> bool {
             | "/aiserver.v1.InferenceService/RunInferenceSSE"
             | "/aiserver.v1.AiService/StreamSttSSE"
             | "/aiserver.v1.AiService/StreamSttPoll"
+            | "/aiserver.v1.AiService/TextToSpeech"
             | "/aiserver.v1.HealthService/StreamBidiSSE"
             | "/aiserver.v1.BidiService/BidiAppend"
             | "/aiserver.v1.AiService/AvailableDocs"
@@ -222,6 +223,7 @@ mod tests {
             "/aiserver.v1.InferenceService/RunInferenceSSE",
             "/aiserver.v1.AiService/StreamSttSSE",
             "/aiserver.v1.AiService/StreamSttPoll",
+            "/aiserver.v1.AiService/TextToSpeech",
             "/aiserver.v1.HealthService/StreamBidiSSE",
             "/aiserver.v1.AiService/GetServerConfig",
             "/aiserver.v1.ServerConfigService/GetServerConfig",

@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
-use crate::model::{CheckpointId, ToolCall, ToolRoundId, Usage};
+use crate::{
+    cursor::protocol::proto::agent::v1::BackgroundTaskCompletion,
+    model::{CheckpointId, ToolCall, ToolRoundId, Usage},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RunFailure {
@@ -96,6 +99,7 @@ pub struct MessagesCommitted {
     pub checkpoint_id: CheckpointId,
     pub tool_round_version: u64,
     pub cause: CommitCause,
+    pub background_completions: Vec<BackgroundTaskCompletion>,
     pub barrier: CommitBarrier,
 }
 

@@ -135,7 +135,11 @@ impl ConversationRegistry {
             MessageDelivery::InsertMessages => {
                 active
                     .handle
-                    .insert_messages(compiled.event_id, compiled.messages)
+                    .insert_messages_with_background_completions(
+                        compiled.event_id,
+                        compiled.messages,
+                        compiled.background_completions,
+                    )
                     .await
             }
             MessageDelivery::BreakMessages => {

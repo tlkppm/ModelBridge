@@ -37,7 +37,7 @@ async fn actor_exit_removes_the_matching_transport_and_allows_a_new_generation()
     let first = registry.get_or_create("lifecycle-request").await.unwrap();
     assert!(registry.local("lifecycle-request").await.is_some());
 
-    first.command(TransportCommand::Disconnect).await.unwrap();
+    first.disconnect().await;
     tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             if registry.local("lifecycle-request").await.is_none() {

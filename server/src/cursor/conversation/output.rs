@@ -487,6 +487,8 @@ impl ConversationOutput {
                         streams.clear();
                     }
                     RunEvent::MessagesCommitted(state) => {
+                        self.checkpoint
+                            .record_background_completions(&state.background_completions);
                         if matches!(&state.cause, CommitCause::RuntimeEvent { .. }) {
                             response_text.clear();
                             response_thinking.clear();
@@ -964,6 +966,7 @@ impl ConversationOutput {
                         event_id,
                         target_run_id: None,
                         messages: vec![message],
+                        background_completions: Vec::new(),
                         delivery: MessageDelivery::BreakMessages,
                     },
                 )

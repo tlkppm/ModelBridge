@@ -199,6 +199,63 @@ impl CheckpointBuilder {
         Ok(checkpoint)
     }
 
+    pub(crate) fn record_background_completions(
+        &mut self,
+        completions: &[pb::BackgroundTaskCompletion],
+    ) {
+        for completion in completions {
+            if pb::BackgroundTaskKind::try_from(completion.kind)
+                != Ok(pb::BackgroundTaskKind::Subagent)
+                || pb::BackgroundTaskCompletionReason::try_from(completion.reason)
+                    != Ok(pb::BackgroundTaskCompletionReason::TaskFinished)
+            {
+                continue;
+            }
+            let Some(tool_call_id) = completion
+                .tool_call_id
+                .as_deref()
+                .filter(|id| !id.is_empty())
+            else {
+                continue;
+            };
+            let status = match pb::BackgroundTaskStatus::try_from(completion.status) {
+                Ok(pb::BackgroundTaskStatus::Success) => pb::SubagentRunStatus::Success,
+                Ok(pb::BackgroundTaskStatus::Error) => pb::SubagentRunStatus::Error,
+                Ok(pb::BackgroundTaskStatus::Aborted) => pb::SubagentRunStatus::Aborted,
+                _ => continue,
+            };
+            let state = self
+                .base
+                .subagent_runs_by_parent_tool_call_id
+                .entry(tool_call_id.to_owned())
+                .or_insert_with(|| pb::SubagentRunState {
+                    parent_tool_call_id: tool_call_id.to_owned(),
+                    subagent_id: completion.subagent_id.clone(),
+                    environment: pb::SubagentExecutionEnvironment::Unspecified as i32,
+                    status: pb::SubagentRunStatus::Running as i32,
+                    title: None,
+                    detail: None,
+                    transcript_path: None,
+                    output_path: None,
+                    completed_timestamp_ms: None,
+                    completion_reason: None,
+                });
+            state.status = status as i32;
+            if completion.subagent_id.is_some() {
+                state.subagent_id = completion.subagent_id.clone();
+            }
+            if !completion.title.is_empty() {
+                state.title = Some(completion.title.clone());
+            }
+            state.detail = completion.detail.clone();
+            state.output_path = completion.output_path.clone();
+            if state.completed_timestamp_ms.is_none() {
+                state.completed_timestamp_ms = Some(crate::cursor::tools::runtime::now_ms());
+            }
+            state.completion_reason = Some(completion.reason);
+        }
+    }
+
     fn record_background_subagents(&mut self, presentation: &PendingSteps) {
         for step in &presentation.steps {
             let Some(pb::conversation_step::Message::ToolCall(call)) = step.message.as_ref() else {
@@ -242,21 +299,38 @@ impl CheckpointBuilder {
                     cloud_requested_environment_build_id: None,
                     machine: args.machine.clone(),
                 });
-            self.base.subagent_runs_by_parent_tool_call_id.insert(
-                tool_call_id.clone(),
-                pb::SubagentRunState {
-                    parent_tool_call_id: tool_call_id.clone(),
-                    subagent_id: Some(agent_id.clone()),
-                    environment: args.environment,
-                    status: pb::SubagentRunStatus::Backgrounded as i32,
-                    title: Some(args.description.clone()),
-                    detail: success.result_suffix.clone(),
-                    transcript_path: success.transcript_path.clone(),
-                    output_path: None,
-                    completed_timestamp_ms: None,
-                    completion_reason: None,
-                },
-            );
+            let terminal = self
+                .base
+                .subagent_runs_by_parent_tool_call_id
+                .get(tool_call_id)
+                .is_some_and(|state| {
+                    matches!(
+                        pb::SubagentRunStatus::try_from(state.status),
+                        Ok(pb::SubagentRunStatus::Success)
+                            | Ok(pb::SubagentRunStatus::Error)
+                            | Ok(pb::SubagentRunStatus::Aborted)
+                    )
+                });
+            if terminal {
+                continue;
+            }
+            self.base
+                .subagent_runs_by_parent_tool_call_id
+                .insert(
+                    tool_call_id.clone(),
+                    pb::SubagentRunState {
+                        parent_tool_call_id: tool_call_id.clone(),
+                        subagent_id: Some(agent_id.clone()),
+                        environment: args.environment,
+                        status: pb::SubagentRunStatus::Backgrounded as i32,
+                        title: Some(args.description.clone()),
+                        detail: success.result_suffix.clone(),
+                        transcript_path: success.transcript_path.clone(),
+                        output_path: None,
+                        completed_timestamp_ms: None,
+                        completion_reason: None,
+                    },
+                );
         }
     }
 

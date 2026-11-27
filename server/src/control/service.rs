@@ -28,8 +28,9 @@ use crate::{
     plugin::{PluginDescriptor, PluginRegistry, PluginRuntime, PluginRuntimeStatus},
     provider::{is_valid_response_event, ModelEvent, Provider},
     store::{
-        CommitSettings, DesktopSettings, ExternalApiSettings, PortSettings, ProxySettings,
-        ProxySettingsInput, StatisticsStorage, Store, TabSettings, TokenPricingSettings,
+        CommitSettings, CursorTtsSettings, DesktopSettings, ExternalApiSettings, PortSettings,
+        ProxySettings, ProxySettingsInput, StatisticsStorage, Store, TabSettings,
+        TokenPricingSettings,
     },
     Error, Result,
 };
@@ -704,6 +705,17 @@ impl ControlService {
         settings: ExternalApiSettings,
     ) -> Result<ExternalApiSettings> {
         self.store.set_external_api_settings(settings).await
+    }
+
+    pub async fn cursor_tts_settings(&self) -> Result<CursorTtsSettings> {
+        self.store.cursor_tts_settings().await
+    }
+
+    pub async fn set_cursor_tts_settings(
+        &self,
+        settings: CursorTtsSettings,
+    ) -> Result<CursorTtsSettings> {
+        self.store.set_cursor_tts_settings(settings).await
     }
 
     pub async fn image_generation_settings(

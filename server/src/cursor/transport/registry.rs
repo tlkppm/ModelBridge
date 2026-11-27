@@ -197,7 +197,7 @@ impl TransportRegistry {
                 "local Agent cannot reuse an active request_id".into(),
             ));
         }
-        local.remove(request_id);
+        let replaced = local.remove(request_id);
         let (commands, receiver) = mpsc::channel(128);
         let output = Arc::new(OutputHub::default());
         let trace = self.inner.traces.recorder(request_id);
@@ -212,6 +212,9 @@ impl TransportRegistry {
             },
         );
         drop(local);
+        if let Some(previous) = replaced {
+            previous.handle.disconnect().await;
+        }
         self.inner.route_changed.notify_waiters();
         self.inner
             .conversations

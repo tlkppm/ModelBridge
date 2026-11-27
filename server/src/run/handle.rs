@@ -92,7 +92,18 @@ impl RunHandle {
         event_id: String,
         messages: Vec<CanonicalMessage>,
     ) -> CommandResult {
-        self.submit_messages(event_id, messages, false).await
+        self.submit_messages(event_id, messages, Vec::new(), false)
+            .await
+    }
+
+    pub(crate) async fn insert_messages_with_background_completions(
+        &self,
+        event_id: String,
+        messages: Vec<CanonicalMessage>,
+        background_completions: Vec<crate::cursor::protocol::proto::agent::v1::BackgroundTaskCompletion>,
+    ) -> CommandResult {
+        self.submit_messages(event_id, messages, background_completions, false)
+            .await
     }
 
     pub async fn break_messages(
@@ -100,19 +111,22 @@ impl RunHandle {
         event_id: String,
         messages: Vec<CanonicalMessage>,
     ) -> CommandResult {
-        self.submit_messages(event_id, messages, true).await
+        self.submit_messages(event_id, messages, Vec::new(), true)
+            .await
     }
 
     async fn submit_messages(
         &self,
         event_id: String,
         messages: Vec<CanonicalMessage>,
+        background_completions: Vec<crate::cursor::protocol::proto::agent::v1::BackgroundTaskCompletion>,
         should_break: bool,
     ) -> CommandResult {
         let (result, delivered) = oneshot::channel();
         let batch = MessageBatch {
             event_id,
             messages,
+            background_completions,
             result,
         };
         let command = if should_break {

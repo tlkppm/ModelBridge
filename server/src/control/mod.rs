@@ -201,6 +201,10 @@ pub fn api_router(service: ControlService) -> Router {
             get(settings::get_external_api).put(settings::update_external_api),
         )
         .route(
+            "/__byok-api__/api/settings/cursor-tts",
+            get(settings::get_cursor_tts).put(settings::update_cursor_tts),
+        )
+        .route(
             "/__byok-api__/api/settings/image-generation",
             get(settings::get_image_generation).put(settings::update_image_generation),
         )

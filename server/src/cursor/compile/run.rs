@@ -36,6 +36,7 @@ struct ActionProjection {
     starts_turn: bool,
     compacting: bool,
     background_completion: bool,
+    background_completions: Vec<pb::BackgroundTaskCompletion>,
 }
 
 pub struct CursorRunContext {
@@ -47,6 +48,7 @@ pub struct CursorRunContext {
     pub checkpoint_prompt: PromptSpec,
     pub compacting: bool,
     pub background_completion: bool,
+    pub background_completions: Vec<pb::BackgroundTaskCompletion>,
 }
 
 pub(crate) struct PrepareDependencies<'a> {
@@ -146,6 +148,7 @@ pub(crate) async fn prepare(
         starts_turn,
         compacting,
         background_completion,
+        background_completions,
     } = action(request, &conversation_id)?;
     let checkpoint_mode = if request.subagent_type_name.is_some() {
         Mode::Subagent
@@ -377,6 +380,7 @@ pub(crate) async fn prepare(
             checkpoint_prompt,
             compacting,
             background_completion,
+            background_completions,
         },
     ))
 }
@@ -447,6 +451,7 @@ fn action(
             starts_turn: false,
             compacting: false,
             background_completion: false,
+            background_completions: Vec::new(),
         });
     };
     match action {
@@ -488,6 +493,7 @@ fn action(
                     starts_turn: false,
                     compacting: true,
                     background_completion: false,
+                    background_completions: Vec::new(),
                 });
             }
             let mut context = action
@@ -513,6 +519,7 @@ fn action(
                 starts_turn: true,
                 compacting: false,
                 background_completion: false,
+                background_completions: Vec::new(),
             })
         }
         pb::conversation_action::Action::BackgroundTaskCompletionAction(action) => {
@@ -527,6 +534,7 @@ fn action(
                 starts_turn: true,
                 compacting: false,
                 background_completion: true,
+                background_completions: projection.background_completions,
             })
         }
         pb::conversation_action::Action::ExecutePlanAction(action) => execute_plan(action),
@@ -539,6 +547,7 @@ fn action(
             starts_turn: false,
             compacting: true,
             background_completion: false,
+            background_completions: Vec::new(),
         }),
         _ => Ok(ActionProjection {
             mode,
@@ -549,6 +558,7 @@ fn action(
             starts_turn: false,
             compacting: false,
             background_completion: false,
+            background_completions: Vec::new(),
         }),
     }
 }
@@ -598,6 +608,7 @@ fn execute_plan(action: &pb::ExecutePlanAction) -> Result<ActionProjection> {
         starts_turn: true,
         compacting: false,
         background_completion: false,
+        background_completions: Vec::new(),
     })
 }
 

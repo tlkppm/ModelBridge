@@ -60,6 +60,10 @@ fn router_with_proxy(
             post(stt_poll_handler),
         )
         .route(
+            "/aiserver.v1.AiService/TextToSpeech",
+            post(text_to_speech_handler),
+        )
+        .route(
             "/aiserver.v1.HealthService/StreamBidiSSE",
             post(health_bidi_sse_handler),
         )
@@ -188,6 +192,18 @@ async fn health() -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
+async fn text_to_speech_handler(
+    State(registry): State<TransportRegistry>,
+    Extension(proxy): Extension<CursorProxy>,
+    request: Request<Body>,
+) -> Result<Response<Body>> {
+    let service_url = registry.store().cursor_tts_settings().await?.service_url;
+    if service_url.is_empty() {
+        return proxy::forward(Extension(proxy), request).await;
+    }
+    proxy::forward_to_service(&proxy, request, &service_url).await
+}
+
 /// `NetworkService/IsConnected` probe. Cursor's always-local extension checks
 /// connectivity roughly 10s after any slow request starts; a 404/error here is
 /// treated as "network disconnected" and aborts in-flight work (e.g. commit
@@ -211,6 +227,7 @@ async fn run_sse_handler(
     request: Request<Body>,
 ) -> Result<Response<Body>> {
     let (parts, body) = buffered(request).await?;
+    let parent = parent_headers(&parts.headers)?;
     let request: agent::BidiRequestId = connect::decode_unary(&body)?;
     tracing::Span::current().record("request_id", request.request_id.as_str());
     tracing::info!("Cursor diagnostic: waiting for RunSSE route");
@@ -229,6 +246,11 @@ async fn run_sse_handler(
     );
     match route {
         crate::cursor::transport::TransportRoute::Local => {
+            if let Some(parent) = parent {
+                if let Some(handle) = registry.local(&request.request_id).await {
+                    handle.set_parent(parent)?;
+                }
+            }
             tracing::info!(route = "local", "Cursor diagnostic: RunSSE route selected");
             run_sse::stream(&registry, &request.request_id).await
         }
@@ -558,14 +580,20 @@ fn parent_headers(headers: &HeaderMap) -> Result<Option<TransportParent>> {
     let request_id = header_text(headers, "x-parent-request-id")?;
     let tool_call_id = header_text(headers, "x-parent-agent-tool-call-id")?;
     match (request_id, tool_call_id) {
-        (None, None) => Ok(None),
         (Some(request_id), Some(tool_call_id)) => Ok(Some(TransportParent {
             request_id: request_id.into(),
             tool_call_id: tool_call_id.into(),
         })),
-        _ => Err(crate::Error::Protocol(
-            "Cursor subagent request must include both parent headers".into(),
-        )),
+        (request_id, tool_call_id) => {
+            if request_id.is_some() || tool_call_id.is_some() {
+                tracing::warn!(
+                    has_parent_request_id = request_id.is_some(),
+                    has_parent_tool_call_id = tool_call_id.is_some(),
+                    "Cursor request carried incomplete parent metadata"
+                );
+            }
+            Ok(None)
+        }
     }
 }
 
@@ -575,4 +603,5 @@ fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Result<Option<&'a str>
         .map(|value| value.to_str())
         .transpose()
         .map_err(|error| crate::Error::Protocol(format!("invalid {name} header: {error}")))
+        .map(|value| value.filter(|value| !value.is_empty()))
 }

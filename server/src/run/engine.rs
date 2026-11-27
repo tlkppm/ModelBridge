@@ -138,6 +138,7 @@ impl RunEngine {
                         checkpoint_id: checkpoint,
                         tool_round_version: 0,
                         cause: CommitCause::InitialMessages,
+                        background_completions: Vec::new(),
                         barrier,
                     }),
                 )
@@ -625,6 +626,7 @@ impl RunEngine {
                         checkpoint_id: checkpoint,
                         tool_round_version: 0,
                         cause: CommitCause::Compaction { summary },
+                        background_completions: Vec::new(),
                         barrier,
                     }),
                 )
@@ -716,6 +718,7 @@ impl RunEngine {
                         checkpoint_id: checkpoint,
                         tool_round_version: 0,
                         cause: CommitCause::FinalTurn,
+                        background_completions: Vec::new(),
                         barrier,
                     }),
                 )
@@ -928,6 +931,7 @@ impl RunEngine {
                 checkpoint_id: checkpoint,
                 tool_round_version: 0,
                 cause: CommitCause::Compaction { summary },
+                background_completions: Vec::new(),
                 barrier,
             }),
         )

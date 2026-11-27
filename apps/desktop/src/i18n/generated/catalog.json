@@ -103,6 +103,11 @@
           "column": 10
         },
         {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 68,
+          "column": 14
+        },
+        {
           "file": "features/settings/ImageGenerationSettingsCard.tsx",
           "line": 196,
           "column": 14
@@ -119,7 +124,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 184,
+          "line": 185,
           "column": 82
         },
         {
@@ -340,7 +345,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 101,
+          "line": 102,
           "column": 38
         }
       ]
@@ -381,7 +386,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 281,
+          "line": 283,
           "column": 26
         }
       ]
@@ -804,7 +809,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 285,
+          "line": 287,
           "column": 131
         }
       ]
@@ -823,6 +828,18 @@
         }
       ]
     },
+    "1c75f997c4a1f628": {
+      "source": "试听请求会发送到本机服务；未配置时使用 Cursor 官方 TTS。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 89,
+          "column": 19
+        }
+      ]
+    },
     "1cb7e646ac883fb2": {
       "source": "代理端口",
       "kind": "text",
@@ -830,17 +847,17 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 71,
+          "line": 72,
           "column": 42
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 189,
+          "line": 190,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 216,
+          "line": 217,
           "column": 58
         }
       ]
@@ -953,7 +970,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 258,
+          "line": 260,
           "column": 43
         }
       ]
@@ -977,7 +994,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 126,
+          "line": 127,
           "column": 15
         }
       ]
@@ -1001,7 +1018,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 308,
+          "line": 310,
           "column": 24
         }
       ]
@@ -1212,6 +1229,11 @@
           "column": 21
         },
         {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 63,
+          "column": 62
+        },
+        {
           "file": "features/settings/ImageGenerationSettingsCard.tsx",
           "line": 191,
           "column": 62
@@ -1228,12 +1250,12 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 180,
+          "line": 181,
           "column": 81
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 300,
+          "line": 302,
           "column": 22
         },
         {
@@ -1334,7 +1356,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 150,
+          "line": 151,
           "column": 15
         }
       ]
@@ -1446,7 +1468,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 243,
+          "line": 245,
           "column": 27
         }
       ]
@@ -1545,7 +1567,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 310,
+          "line": 312,
           "column": 42
         }
       ]
@@ -1598,7 +1620,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 292,
+          "line": 294,
           "column": 14
         }
       ]
@@ -1622,7 +1644,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 243,
+          "line": 245,
           "column": 39
         }
       ]
@@ -1689,12 +1711,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 250,
+          "line": 252,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 256,
+          "line": 258,
           "column": 26
         }
       ]
@@ -1759,7 +1781,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 157,
+          "line": 158,
           "column": 66
         }
       ]
@@ -1771,7 +1793,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 276,
+          "line": 278,
           "column": 52
         }
       ]
@@ -2036,6 +2058,11 @@
           "column": 8
         },
         {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 68,
+          "column": 42
+        },
+        {
           "file": "features/settings/ImageGenerationSettingsCard.tsx",
           "line": 196,
           "column": 42
@@ -2161,6 +2188,18 @@
           "file": "features/settings/ImageGenerationSettingsCard.tsx",
           "line": 204,
           "column": 19
+        }
+      ]
+    },
+    "4cbe412d0960d44c": {
+      "source": "填写本机 TTS HTTP 服务的基础地址，留空时继续使用 Cursor 官方 TTS。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 76,
+          "column": 15
         }
       ]
     },
@@ -2366,7 +2405,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 178,
+          "line": 179,
           "column": 26
         }
       ]
@@ -2489,7 +2528,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 236,
+          "line": 238,
           "column": 78
         }
       ]
@@ -2561,7 +2600,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 240,
+          "line": 242,
           "column": 21
         }
       ]
@@ -2846,7 +2885,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 564,
+          "line": 568,
           "column": 43
         }
       ]
@@ -3009,7 +3048,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 101,
+          "line": 102,
           "column": 55
         }
       ]
@@ -3197,7 +3236,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 168,
+          "line": 169,
           "column": 16
         }
       ]
@@ -3250,7 +3289,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 268,
+          "line": 270,
           "column": 26
         }
       ]
@@ -3274,7 +3313,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 559,
+          "line": 563,
           "column": 43
         }
       ]
@@ -3298,7 +3337,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 301,
+          "line": 303,
           "column": 23
         }
       ]
@@ -3377,7 +3416,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 144,
+          "line": 145,
           "column": 83
         }
       ]
@@ -3476,6 +3515,18 @@
         }
       ]
     },
+    "80a57e03f0717f91": {
+      "source": "未配置",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 91,
+          "column": 63
+        }
+      ]
+    },
     "811a3b22a5a7f2d5": {
       "source": "无法连接本地管理服务",
       "kind": "text",
@@ -3483,7 +3534,7 @@
       "refs": [
         {
           "file": "shared/api.ts",
-          "line": 488,
+          "line": 492,
           "column": 21
         }
       ]
@@ -3790,7 +3841,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 239,
+          "line": 241,
           "column": 22
         }
       ]
@@ -3956,8 +4007,20 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 160,
+          "line": 161,
           "column": 7
+        }
+      ]
+    },
+    "9229b4eea41dbca4": {
+      "source": "Cursor 语音试听",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 71,
+          "column": 29
         }
       ]
     },
@@ -4187,6 +4250,18 @@
         }
       ]
     },
+    "9c80393fe05c07d9": {
+      "source": "服务需要接收 /aiserver.v1.AiService/TextToSpeech，并返回 Cursor 兼容的 protobuf 音频响应。",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 93,
+          "column": 39
+        }
+      ]
+    },
     "9db205c6055bacc4": {
       "source": "插件运行时初始化失败",
       "kind": "text",
@@ -4242,7 +4317,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 247,
+          "line": 249,
           "column": 26
         }
       ]
@@ -4278,7 +4353,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 64,
+          "line": 65,
           "column": 34
         }
       ]
@@ -4388,6 +4463,11 @@
           "column": 22
         },
         {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 65,
+          "column": 29
+        },
+        {
           "file": "features/settings/ExternalApiSettingsCard.tsx",
           "line": 41,
           "column": 27
@@ -4409,7 +4489,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 181,
+          "line": 182,
           "column": 133
         },
         {
@@ -4933,7 +5013,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 157,
+          "line": 158,
           "column": 45
         }
       ]
@@ -4959,7 +5039,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 284,
+          "line": 286,
           "column": 22
         }
       ]
@@ -4981,6 +5061,11 @@
       "kind": "text",
       "placeholders": [],
       "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 68,
+          "column": 32
+        },
         {
           "file": "features/settings/ImageGenerationSettingsCard.tsx",
           "line": 196,
@@ -5117,7 +5202,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 285,
+          "line": 287,
           "column": 31
         }
       ]
@@ -5129,7 +5214,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 276,
+          "line": 278,
           "column": 40
         }
       ]
@@ -5437,6 +5522,18 @@
         }
       ]
     },
+    "cc2e6610efc4386d": {
+      "source": "本地 TTS 服务",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 88,
+          "column": 20
+        }
+      ]
+    },
     "cc30e8b918c0549e": {
       "source": "下载并初始化运行时",
       "kind": "text",
@@ -5509,12 +5606,12 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 166,
+          "line": 167,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 172,
+          "line": 173,
           "column": 20
         }
       ]
@@ -5526,7 +5623,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 203,
+          "line": 204,
           "column": 21
         }
       ]
@@ -5550,7 +5647,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 159,
+          "line": 160,
           "column": 7
         }
       ]
@@ -5883,6 +5980,18 @@
         }
       ]
     },
+    "de8334b52e34d15d": {
+      "source": "Cursor TTS 设置已保存",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 52,
+          "column": 15
+        }
+      ]
+    },
     "dea7749c4cd77e6d": {
       "source": "总请求 Token 包含提示词和模型输出。",
       "kind": "text",
@@ -5914,7 +6023,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 320,
+          "line": 322,
           "column": 30
         },
         {
@@ -6231,7 +6340,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 77,
+          "line": 78,
           "column": 17
         }
       ]
@@ -6337,7 +6446,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 163,
+          "line": 164,
           "column": 26
         }
       ]
@@ -6452,7 +6561,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 222,
+          "line": 223,
           "column": 16
         }
       ]
@@ -6609,6 +6718,18 @@
         }
       ]
     },
+    "f722b580abe7f34c": {
+      "source": "本地 TTS 服务地址",
+      "kind": "text",
+      "placeholders": [],
+      "refs": [
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 75,
+          "column": 16
+        }
+      ]
+    },
     "f78413c36d36f090": {
       "source": "默认跟随操作系统；不支持的系统语言使用英文。当前：{language}",
       "kind": "template",
@@ -6618,7 +6739,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 251,
+          "line": 253,
           "column": 21
         }
       ]
@@ -6754,7 +6875,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 190,
+          "line": 191,
           "column": 21
         }
       ]
@@ -6913,7 +7034,7 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 311,
+          "line": 313,
           "column": 38
         }
       ]
@@ -6927,6 +7048,11 @@
           "file": "features/settings/CommitSettingsCard.tsx",
           "line": 169,
           "column": 24
+        },
+        {
+          "file": "features/settings/CursorTtsSettingsCard.tsx",
+          "line": 65,
+          "column": 17
         },
         {
           "file": "features/settings/ExternalApiSettingsCard.tsx",
@@ -6950,7 +7076,7 @@
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 181,
+          "line": 182,
           "column": 121
         },
         {
@@ -6979,17 +7105,17 @@
       "refs": [
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 72,
+          "line": 73,
           "column": 46
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 202,
+          "line": 203,
           "column": 22
         },
         {
           "file": "features/settings/SettingsPage.tsx",
-          "line": 217,
+          "line": 218,
           "column": 58
         }
       ]

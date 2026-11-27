@@ -118,6 +118,10 @@ export interface ExternalApiSettings {
   api_key: string;
 }
 
+export interface CursorTtsSettings {
+  service_url: string;
+}
+
 export type ImageGenerationMode = "existing" | "independent";
 export type ImageGenerationKeyAction = "keep" | "replace" | "clear";
 
@@ -580,6 +584,8 @@ export const api = {
   setPorts: (settings: PortSettings) => request<PortSettings>("/settings/ports", { method: "PUT", body: JSON.stringify(settings) }),
   externalApiSettings: () => request<ExternalApiSettings>("/settings/external-api"),
   setExternalApiSettings: (settings: ExternalApiSettings) => request<ExternalApiSettings>("/settings/external-api", { method: "PUT", body: JSON.stringify(settings) }),
+  cursorTtsSettings: () => request<CursorTtsSettings>("/settings/cursor-tts"),
+  setCursorTtsSettings: (settings: CursorTtsSettings) => request<CursorTtsSettings>("/settings/cursor-tts", { method: "PUT", body: JSON.stringify(settings) }),
   imageGenerationSettings: () => request<ImageGenerationSettingsView>("/settings/image-generation"),
   setImageGenerationSettings: (settings: ImageGenerationSettingsInput) => request<ImageGenerationSettingsView>("/settings/image-generation", { method: "PUT", body: JSON.stringify(settings) }),
   discoverImageModels: (settings: ImageGenerationSettingsInput) => request<{ models: string[] }>("/settings/image-generation/models", { method: "POST", body: JSON.stringify(settings) }),

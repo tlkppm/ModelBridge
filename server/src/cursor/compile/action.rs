@@ -17,6 +17,7 @@ pub struct CompiledMessages {
     pub event_id: String,
     pub target_run_id: Option<RunId>,
     pub messages: Vec<CanonicalMessage>,
+    pub background_completions: Vec<pb::BackgroundTaskCompletion>,
     pub delivery: MessageDelivery,
 }
 
@@ -26,6 +27,7 @@ impl CompiledMessages {
             event_id: event_id.into(),
             target_run_id: None,
             messages: Vec::new(),
+            background_completions: Vec::new(),
             delivery: MessageDelivery::Ignore,
         }
     }
